@@ -1,0 +1,159 @@
+body 
+{
+	background: linear-gradient(white, pink ) no-repeat;
+	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	color: black;
+	background-color: white ;
+}
+
+main 
+{
+	max-width: 900pv;
+	margin: auto;
+	padding: 0.5rem;
+	text-align: center;
+}
+
+.button 
+{
+  margin: 5px 5px 5px 5px;
+  padding: 10px 10px 10px 10px;
+  text-align: center;
+  transition: 0.5s;
+  background-size: 200% auto;
+  color: purple;
+  border-radius: 10px;
+  border-color: purple;
+  display: block;
+  font-weight: 700;
+  background-image: linear-gradient(45deg, pink 0%, white  51%, pink  100%);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.button:active
+{
+	transform: scale(0.95);
+	border-radius: 10px;
+}
+
+.button:hover
+{
+  background-position: right center;
+  color: pink;
+  text-decoration: none;
+  border-radius: 10px;
+}
+
+.button:disabled
+{
+	background-color: pink;
+	opacity: 0.5;
+	color: purple;
+	border-radius: 10px;
+	box-shadow: none;
+}
+
+input
+{
+	margin: 5px 5px 5px 5px;
+	padding: 10px 10px 10px 10px;
+	-webkit-appearance: none;
+	-moz-appearance: none;
+	appearance: none;
+	max-width: 100%;
+	font-size: 0.75pc;
+	box-sizing: border-box;
+	text-align: center;
+	border-radius: 10px;
+	opacity: 0.9;
+	background-color: white;
+}
+
+.buttongrid
+{
+	display: grid;
+	grid-template-columns: 33% 33% 33%;
+	grid-template-rows: 60% 60%;
+	text-align: center;
+	gap: 3px;
+}
+
+.rotate
+{
+	-ms-transform: rotate(90deg);
+	-webkit-transform: rotate(90deg);
+	transform: rotate(90deg);
+	margin-left: -24vw;
+	margin-top: -5vw;
+	width: 150%;
+	max-height: 100%;
+}
+
+.normal
+{
+	-ms-transform: rotate(0deg);
+	-webkit-transform: rotate(0deg);
+	transform: rotate(0deg);
+	width: 100vw;
+	margin-left: -50vw;
+	margin-right: -50vw;
+	position: relative;
+	right: 50%;
+	left: 50%;
+}
+
+input[type="checkbox"], label
+{
+    float: left;
+    line-height: 1.6em;
+    height: 1.6em;
+    margin: 0px 2px;
+    padding: 0px;
+    font-size: small;
+}
+
+input[type=checkbox]:before
+{
+	content: "";
+	display: block;
+	position: absolute;
+	width: 16px;
+	height: 16px;
+	top: 0;
+	left: 0;
+	border: 2px solid purple;
+	border-radius: 3px;
+	background-color: white;
+}
+
+input[type=checkbox]:checked:after
+{
+	content: "";
+	display: block;
+	width: 5px;
+	height: 10px;
+	border: solid purple;
+	border-width: 0 2px 2px 0;
+	-webkit-transform: rotate(45deg);
+	-ms-transform: rotate(45deg);
+	transform: rotate(45deg);
+	position: absolute;
+	top: 2px;
+	left: 6px;
+}
+
+input[type=checkbox] 
+{
+	position: relative;
+	cursor: pointer;
+	clear: left;
+	margin-right: 25px;
+	margin-bottom: 20px;
+}
+
+
+
+

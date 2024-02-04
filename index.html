@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="keywords" content="Aunty, Acid, gocomics, gocomics.com, gocomics.com/aunty-acid, online, comic, comics, strip, strips, cartoon, cartoons, webapp, mobile, responsive, pwa, progressive, web, app, ios, android, windows, platform, multi, platforms, independent">
+	<meta name="description" content="Aunty Acid Comics App, Current, Next, Previous, Random, First, Specific Date, Swipe, Favorites">
+	<meta name="msapplication-TileColor" content="white">
+	<meta name="theme-color" content="white">
+	<meta name="google-site-verification" content="hGrU7k3yZh4Fk4Ci7DWs_vTv8CAaiLlc0T2o186W78g" />
+	<title>Daily Garfield Comics</title>
+	<link rel="stylesheet" href="./main.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+	<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+	<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+	<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
+	<link rel="canonical" href="https://auntyacidapp.pages.dev">
+	<link rel="manifest" href="./manifest.webmanifest">
+	<link rel="preconnect" href="https://assets.amuniversal.com">
+	<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+	<script src="./swiped-events.min.js"></script>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+</head>
+
+<body onload=onLoad()>
+	<h1 hidden>Daily Aunty Acid Comic App</h1>
+		<div class="buttongrid">
+		<button class="button" cursor="pointer" id="Previous" onclick="PreviousClick()">Previous</button>
+		<button class="button" cursor="pointer" id="Random" onclick="RandomClick()">Random</button>
+		<button class="button" cursor="pointer" id="Next" onclick="NextClick()">Next</button>
+		<button class="button" cursor="pointer" id="First" onclick="FirstClick()">First</button>
+		<input id="DatePicker" cursor="pointer" oninput="DateChange()" type="date" min="1978-06-19">
+		<button class="button" cursor="pointer" id="Current" onclick="CurrentClick()">Today</button>
+	</div>
+	<br>
+	<br> <img id="comic" style="width: 80%;padding-left: 12%;" cursor="pointer" onclick="Rotate()" class="normal" alt="Loading comic from https://gocomics.com...">
+	<br>
+	<br>
+	<div><i onclick="Addfav()" aria-hidden="true" class="fa fa-heart-o favicon" style="color:'red'; font-size: 25px; right: 70px; position: absolute"></i> <i onclick="Share()" aria-hidden="true" cursor="pointer" class="fa fa-share-alt" style="font-size: 25px; right: 20px; position: absolute"></i> </div>
+	<div>
+		<a href="https://buymeacoffee.com/garfieldapp" target="_blank"><img src="./bmc-full-logo-no-background.png" style="width: 40%;margin-top: -20px;"></a>
+	</div>
+	<br>
+    <div>
+		<input type="checkbox" id="swipe" checked cursor="pointer">
+    	<label for="swipe" class="labels" cursor="pointer">Swipe enabled</label>
+	</div>
+	<br>
+	<div>
+		<input type="checkbox" id="showfavs" checked cursor="pointer">
+    	<label for="showfavs" class="labels" cursor="pointer">Show only my favorites</label>
+	</div> 
+	<br>
+	<div>
+		<input type="checkbox" id="lastdate" checked cursor="pointer">
+    	<label for="lastdate" class="labels" cursor="pointer">Remember last comic on exit/refresh</label>
+    </div>
+	
+	<script src="./app.js"></script> 
+
+</body>
+
+</html>
