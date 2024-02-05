@@ -42,7 +42,7 @@ main
 .button:hover
 {
   background-position: right center;
-  color: pink;
+  color: purple;
   text-decoration: none;
   border-radius: 10px;
 }
