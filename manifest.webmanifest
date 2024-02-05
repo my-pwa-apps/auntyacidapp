@@ -1,7 +1,7 @@
 {
-  "name": "Daily Garfield",
-  "description": "Garfield Comics, Current, Next, Previous, Random, First, Specific Date, Swipe",
-  "short_name": "Garfield",
+  "name": "Aunty Acid",
+  "description": "Aunty Acid Comics, Current, Next, Previous, Random, First, Specific Date, Swipe",
+  "short_name": "Aunty Acid",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait-primary",
