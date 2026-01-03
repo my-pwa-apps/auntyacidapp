@@ -1,8 +1,8 @@
-const CACHE_NAME = 'auntyacid-v30';
+const CACHE_NAME = 'auntyacid-v31';
 
 // Assets to cache on install (use absolute paths from root)
+// Note: Don't include '/' as it redirects to /index.html on most hosts
 const PRECACHE_ASSETS = [
-  '/',
   '/index.html',
   '/app.js',
   '/main.css',
@@ -34,19 +34,6 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Helper: get cached index.html with multiple key attempts
-async function getCachedIndexHtml(cache) {
-  // Try different possible cache keys for the main page
-  const keys = ['/', '/index.html', './index.html', 'index.html'];
-  for (const key of keys) {
-    const response = await cache.match(key);
-    if (response) return response;
-  }
-  // Also try matching with ignoreSearch
-  const response = await cache.match(new Request('/index.html'), { ignoreSearch: true });
-  return response;
-}
-
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
@@ -60,14 +47,14 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       (async () => {
+        const cache = await caches.open(CACHE_NAME);
+        
         try {
-          // Try network first for navigation (ensures fresh content)
-          const networkResponse = await fetch(event.request);
-          if (networkResponse && networkResponse.status === 200) {
+          // Fetch index.html directly (not the navigation URL which may redirect)
+          const networkResponse = await fetch('/index.html', { redirect: 'follow' });
+          if (networkResponse && networkResponse.ok) {
             // Cache the fresh response
-            const cache = await caches.open(CACHE_NAME);
             cache.put('/index.html', networkResponse.clone());
-            cache.put('/', networkResponse.clone());
             return networkResponse;
           }
         } catch (e) {
@@ -75,13 +62,12 @@ self.addEventListener('fetch', (event) => {
         }
         
         // Network failed or returned error - serve from cache
-        const cache = await caches.open(CACHE_NAME);
-        const cachedResponse = await getCachedIndexHtml(cache);
+        const cachedResponse = await cache.match('/index.html');
         if (cachedResponse) {
           return cachedResponse;
         }
         
-        // Last resort: try fetching index.html directly
+        // Last resort: try fetching again
         return fetch('/index.html');
       })()
     );
@@ -96,7 +82,7 @@ self.addEventListener('fetch', (event) => {
       
       // Start network fetch in background
       const fetchPromise = fetch(event.request).then(response => {
-        if (response && response.status === 200) {
+        if (response && response.ok) {
           cache.put(event.request, response.clone());
         }
         return response;
