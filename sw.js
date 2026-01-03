@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auntyacid-v28';
+const CACHE_NAME = 'auntyacid-v29';
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [

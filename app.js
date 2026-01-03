@@ -604,17 +604,49 @@ function handleImportFile(event) {
 }
 
 // PWA Install Prompt
+
+// Check if app is already installed (standalone mode, including Microsoft Store PWA)
+function isAppInstalled() {
+	// Check display-mode (works for browser-installed PWAs and Microsoft Store PWAs)
+	if (window.matchMedia('(display-mode: standalone)').matches) return true;
+	if (window.matchMedia('(display-mode: window-controls-overlay)').matches) return true;
+	// iOS Safari standalone mode
+	if (navigator.standalone === true) return true;
+	// Document referrer check for installed PWAs
+	if (document.referrer.includes('android-app://')) return true;
+	return false;
+}
+
 window.addEventListener('beforeinstallprompt', (e) => {
+	// Don't show install prompt if already installed
+	if (isAppInstalled()) {
+		e.preventDefault();
+		return;
+	}
 	e.preventDefault();
 	deferredPrompt = e;
 	showInstallButton();
 });
 
+// Hide install button when app gets installed
+window.addEventListener('appinstalled', () => {
+	deferredPrompt = null;
+	hideInstallButton();
+	showNotification('App installed successfully!');
+});
+
 function showInstallButton() {
+	// Never show install button if already installed
+	if (isAppInstalled()) return;
 	const installBtn = $('installBtn');
 	if (installBtn && deferredPrompt) {
 		installBtn.style.display = 'block';
 	}
+}
+
+function hideInstallButton() {
+	const installBtn = $('installBtn');
+	if (installBtn) installBtn.style.display = 'none';
 }
 
 async function handleInstall() {
@@ -628,8 +660,7 @@ async function handleInstall() {
 	}
 	
 	deferredPrompt = null;
-	const installBtn = $('installBtn');
-	if (installBtn) installBtn.style.display = 'none';
+	hideInstallButton();
 }
 
 // Share functionality
@@ -1122,6 +1153,10 @@ document.addEventListener('DOMContentLoaded', () => {
 	
 	// Install button
 	$('installBtn')?.addEventListener('click', handleInstall);
+	// Hide install button if app is already installed (including Microsoft Store PWA)
+	if (isAppInstalled()) {
+		hideInstallButton();
+	}
 	
 	// Checkbox handlers
 	$('swipe')?.addEventListener('change', function() {
