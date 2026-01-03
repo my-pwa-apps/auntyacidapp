@@ -1,16 +1,16 @@
-const CACHE_NAME = 'auntyacid-v29';
+const CACHE_NAME = 'auntyacid-v30';
 
-// Assets to cache on install
+// Assets to cache on install (use absolute paths from root)
 const PRECACHE_ASSETS = [
-  './',
-  './index.html',
-  './app.js',
-  './main.css',
-  './manifest.webmanifest',
-  './aunytacidlogo.png',
-  './favicon-48x48.png',
-  './manifest-icon-192.maskable.png',
-  './manifest-icon-512.maskable.png'
+  '/',
+  '/index.html',
+  '/app.js',
+  '/main.css',
+  '/manifest.webmanifest',
+  '/aunytacidlogo.png',
+  '/favicon-48x48.png',
+  '/manifest-icon-192.maskable.png',
+  '/manifest-icon-512.maskable.png'
 ];
 
 // Install event - cache core assets
@@ -22,7 +22,7 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate event - clean old caches
+// Activate event - clean old caches and take control immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
@@ -33,6 +33,19 @@ self.addEventListener('activate', (event) => {
       .then(() => self.clients.claim())
   );
 });
+
+// Helper: get cached index.html with multiple key attempts
+async function getCachedIndexHtml(cache) {
+  // Try different possible cache keys for the main page
+  const keys = ['/', '/index.html', './index.html', 'index.html'];
+  for (const key of keys) {
+    const response = await cache.match(key);
+    if (response) return response;
+  }
+  // Also try matching with ignoreSearch
+  const response = await cache.match(new Request('/index.html'), { ignoreSearch: true });
+  return response;
+}
 
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
@@ -46,62 +59,63 @@ self.addEventListener('fetch', (event) => {
   // Handle navigation requests (HTML pages) - always serve index.html for SPA
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      caches.match('./index.html')
-        .then(cachedResponse => {
-          if (cachedResponse) {
-            // Update cache in background
-            event.waitUntil(
-              fetch('./index.html')
-                .then(response => {
-                  if (response && response.status === 200) {
-                    caches.open(CACHE_NAME)
-                      .then(cache => cache.put('./index.html', response));
-                  }
-                })
-                .catch(() => {})
-            );
-            return cachedResponse;
+      (async () => {
+        try {
+          // Try network first for navigation (ensures fresh content)
+          const networkResponse = await fetch(event.request);
+          if (networkResponse && networkResponse.status === 200) {
+            // Cache the fresh response
+            const cache = await caches.open(CACHE_NAME);
+            cache.put('/index.html', networkResponse.clone());
+            cache.put('/', networkResponse.clone());
+            return networkResponse;
           }
-          return fetch('./index.html');
-        })
-        .catch(() => caches.match('./index.html'))
+        } catch (e) {
+          // Network failed, fall through to cache
+        }
+        
+        // Network failed or returned error - serve from cache
+        const cache = await caches.open(CACHE_NAME);
+        const cachedResponse = await getCachedIndexHtml(cache);
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        
+        // Last resort: try fetching index.html directly
+        return fetch('/index.html');
+      })()
     );
     return;
   }
   
+  // For other same-origin requests: stale-while-revalidate
   event.respondWith(
-    caches.match(event.request)
-      .then(cachedResponse => {
-        if (cachedResponse) {
-          // Return cached version and update cache in background
-          event.waitUntil(
-            fetch(event.request)
-              .then(response => {
-                if (response && response.status === 200) {
-                  const responseClone = response.clone();
-                  caches.open(CACHE_NAME)
-                    .then(cache => cache.put(event.request, responseClone));
-                }
-              })
-              .catch(() => {})
-          );
-          return cachedResponse;
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cachedResponse = await cache.match(event.request);
+      
+      // Start network fetch in background
+      const fetchPromise = fetch(event.request).then(response => {
+        if (response && response.status === 200) {
+          cache.put(event.request, response.clone());
         }
-        
-        // Not in cache - fetch from network
-        return fetch(event.request)
-          .then(response => {
-            if (!response || response.status !== 200) {
-              return response;
-            }
-            
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME)
-              .then(cache => cache.put(event.request, responseClone));
-            
-            return response;
-          });
-      })
+        return response;
+      }).catch(() => null);
+      
+      if (cachedResponse) {
+        // Return cached, update in background
+        return cachedResponse;
+      }
+      
+      // Nothing cached, wait for network
+      const networkResponse = await fetchPromise;
+      if (networkResponse) {
+        return networkResponse;
+      }
+      
+      // Both failed
+      throw new Error('No cached or network response available');
+    })()
   );
 });
 
