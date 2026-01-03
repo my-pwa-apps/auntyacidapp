@@ -1,4 +1,4 @@
-git push --force origin maingit push --force origin main# Aunty Acid PWA - AI Coding Instructions
+# Aunty Acid PWA - AI Coding Instructions
 
 ## Project Overview
 A Progressive Web App for browsing Aunty Acid comic strips from GoComics. Deployed to Cloudflare Pages at `auntyacidapp.pages.dev`. Part of a family of comic apps (shares patterns with GarfieldApp, DirkJanApp).
