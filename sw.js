@@ -1,7 +1,6 @@
-const CACHE_NAME = 'auntyacid-v31';
+const CACHE_NAME = 'auntyacid-v32';
 
-// Assets to cache on install (use absolute paths from root)
-// Note: Don't include '/' as it redirects to /index.html on most hosts
+// Assets to cache on install
 const PRECACHE_ASSETS = [
   '/index.html',
   '/app.js',
@@ -38,37 +37,48 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // Skip cross-origin requests
+  // Skip cross-origin requests entirely
   if (url.origin !== self.location.origin) {
     return;
   }
   
-  // Handle navigation requests (HTML pages) - always serve index.html for SPA
-  if (event.request.mode === 'navigate') {
+  // Handle navigation requests OR root path requests - serve index.html
+  const isNavigation = event.request.mode === 'navigate';
+  const isRootPath = url.pathname === '/' || url.pathname === '';
+  
+  if (isNavigation || isRootPath) {
     event.respondWith(
       (async () => {
         const cache = await caches.open(CACHE_NAME);
         
-        try {
-          // Fetch index.html directly (not the navigation URL which may redirect)
-          const networkResponse = await fetch('/index.html', { redirect: 'follow' });
-          if (networkResponse && networkResponse.ok) {
-            // Cache the fresh response
-            cache.put('/index.html', networkResponse.clone());
-            return networkResponse;
-          }
-        } catch (e) {
-          // Network failed, fall through to cache
-        }
-        
-        // Network failed or returned error - serve from cache
+        // Try cache first for fast startup
         const cachedResponse = await cache.match('/index.html');
+        
+        // Fetch fresh in background (or foreground if no cache)
+        const fetchPromise = fetch('/index.html').then(response => {
+          if (response && response.ok) {
+            cache.put('/index.html', response.clone());
+          }
+          return response;
+        }).catch(() => null);
+        
         if (cachedResponse) {
+          // Return cached immediately, update in background
+          fetchPromise; // fire and forget
           return cachedResponse;
         }
         
-        // Last resort: try fetching again
-        return fetch('/index.html');
+        // No cache, wait for network
+        const networkResponse = await fetchPromise;
+        if (networkResponse) {
+          return networkResponse;
+        }
+        
+        // Everything failed
+        return new Response('Offline - please check your connection', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' }
+        });
       })()
     );
     return;
@@ -80,7 +90,7 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(CACHE_NAME);
       const cachedResponse = await cache.match(event.request);
       
-      // Start network fetch in background
+      // Start network fetch
       const fetchPromise = fetch(event.request).then(response => {
         if (response && response.ok) {
           cache.put(event.request, response.clone());
@@ -89,17 +99,14 @@ self.addEventListener('fetch', (event) => {
       }).catch(() => null);
       
       if (cachedResponse) {
-        // Return cached, update in background
         return cachedResponse;
       }
       
-      // Nothing cached, wait for network
       const networkResponse = await fetchPromise;
       if (networkResponse) {
         return networkResponse;
       }
       
-      // Both failed
       throw new Error('No cached or network response available');
     })()
   );
