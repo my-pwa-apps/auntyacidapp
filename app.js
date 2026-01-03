@@ -799,7 +799,7 @@ function FirstClick() {
 	showComic('morph'); // Blur morph animation
 }
 
-function CurrentClick() {
+function LastClick() {
 	const favs = getFavs();
 	currentselectedDate = $('showfavs').checked 
 		? new Date(favs[favs.length - 1]) 
@@ -985,7 +985,7 @@ function CompareDates() {
 	
 	const isAtEnd = currentselectedDate.getTime() >= endDate.getTime();
 	$('Next').disabled = isAtEnd;
-	$('Current').disabled = isAtEnd;
+	$('Last').disabled = isAtEnd;
 	
 	if (isAtEnd) {
 		formatDate(endDate);
@@ -1095,7 +1095,7 @@ const swipeDetection = {
 				if (distY > 0) {
 					RandomClick(); // Swipe down
 				} else {
-					CurrentClick(); // Swipe up
+					LastClick(); // Swipe up
 				}
 			}
 		}, { passive: true });
@@ -1124,7 +1124,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	$('Random')?.addEventListener('click', RandomClick);
 	$('DatePicker')?.addEventListener('change', DateChange);
 	$('Next')?.addEventListener('click', NextClick);
-	$('Current')?.addEventListener('click', CurrentClick);
+	$('Last')?.addEventListener('click', LastClick);
 	
 	// Date picker button - opens the hidden date picker
 	$('DatePickerBtn')?.addEventListener('click', () => {

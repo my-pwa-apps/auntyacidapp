@@ -80,9 +80,9 @@ Toolbar uses snap-to-optimal positioning between header and comic:
 - `.comic-outgoing`, `.throw-out-left/right`, `.fade-in-new` - Comic transition animations
 
 ## Service Worker
-Bump `CACHE_NAME` version in `sw.js` when deploying changes:
+**IMPORTANT:** Always bump `CACHE_NAME` version in `sw.js` after making any code changes:
 ```javascript
-const CACHE_NAME = 'auntyacid-v27';  // Increment version number
+const CACHE_NAME = 'auntyacid-v34';  // Increment version number after each change
 ```
 
 ## PWA Manifest
