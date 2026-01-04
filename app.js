@@ -897,8 +897,18 @@ function showComic(direction = null) {
 						// BLUR MORPH animation - blur out old, fade in new
 						const outgoingClone = comicImg.cloneNode(true);
 						outgoingClone.removeAttribute('id');
+						// Remove any leftover animation classes from the clone
+						outgoingClone.classList.remove('throw-out-left', 'throw-out-right', 'fade-in-new', 'visible', 'no-transition');
 						outgoingClone.classList.add('comic-pixelate-outgoing');
 						wrapper.appendChild(outgoingClone);
+						
+						// Reset the main comic and disable transition to prevent any sliding
+						comicImg.classList.add('no-transition');
+						comicImg.classList.remove('throw-out-left', 'throw-out-right', 'fade-in-new', 'visible');
+						comicImg.style.transform = 'translateX(0)';
+						
+						// Force reflow to apply changes immediately
+						comicImg.offsetHeight;
 						
 						// Load new image underneath
 						comicImg.src = pictureUrl;
@@ -910,17 +920,22 @@ function showComic(direction = null) {
 								outgoingClone.classList.add('morph-out');
 							});
 							
-							// Remove clone after animation completes
+							// Remove clone and cleanup after animation completes
 							setTimeout(() => {
 								outgoingClone.remove();
+								comicImg.classList.remove('no-transition');
+								comicImg.style.transform = '';
 							}, 600);
 						};
 						
-						if (comicImg.complete) {
-							startMorph();
-						} else {
-							comicImg.addEventListener('load', startMorph, { once: true });
-						}
+						// Use requestAnimationFrame to ensure browser has processed the src change
+						requestAnimationFrame(() => {
+							if (comicImg.complete) {
+								startMorph();
+							} else {
+								comicImg.addEventListener('load', startMorph, { once: true });
+							}
+						});
 					}
 				} else {
 					// First load or no animation - just set source
