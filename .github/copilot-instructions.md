@@ -1,7 +1,7 @@
 # Aunty Acid PWA - AI Coding Instructions
 
 ## Project Overview
-A Progressive Web App for browsing Aunty Acid comic strips from GoComics. Deployed to Cloudflare Pages at `auntyacidapp.pages.dev`. Part of a family of comic apps (shares patterns with GarfieldApp, DirkJanApp).
+A Progressive Web App for browsing Aunty Acid comic strips from GoComics. Part of a family of comic apps (shares patterns with GarfieldApp, DirkJanApp).
 
 ## Architecture
 
@@ -94,7 +94,6 @@ Use relative paths (`./`) for all URLs to ensure cross-platform compatibility (A
 ```
 
 ## Deployment
-- Hosted on Cloudflare Pages at `auntyacidapp.pages.dev`
 - Push to main branch triggers auto-deploy
 - No build step required (static files)
 
