@@ -855,16 +855,6 @@ function showComic(direction = null) {
 			
 			pictureUrl = imageUrl;
 			
-			// DEBUG: Animation logging
-			const DEBUG_ANIMATION = true;
-			if (DEBUG_ANIMATION) {
-				console.log('🖼️ URL comparison:', { 
-					newUrl: pictureUrl?.substring(0, 60) + '...', 
-					previousUrl: previousUrl?.substring(0, 60) + '...',
-					urlsAreDifferent: pictureUrl !== previousUrl
-				});
-			}
-			
 			if (pictureUrl !== previousUrl) {
 				const comicImg = $('comic');
 				const wrapper = $('comic-wrapper');
@@ -876,22 +866,8 @@ function showComic(direction = null) {
 					comicImg.src !== window.location.href &&
 					!comicImg.src.endsWith('/');
 				
-				if (DEBUG_ANIMATION) {
-					console.log('🎬 Animation Debug:', {
-						direction,
-						hasExistingImage,
-						'comicImg.src': comicImg.src,
-						'window.location.href': window.location.href,
-						'pictureUrl': pictureUrl,
-						'previousUrl': previousUrl
-					});
-				}
-				
 				if (direction && hasExistingImage) {
-					if (DEBUG_ANIMATION) console.log('✅ Animation condition passed, direction:', direction);
-					
 					if (direction === 'next' || direction === 'previous') {
-						if (DEBUG_ANIMATION) console.log('🎞️ Running THROW-OUT animation');
 						// THROW-OUT animation - fling old comic away while new fades in
 						const throwOutClass = direction === 'previous' ? 'throw-out-right' : 'throw-out-left';
 						
@@ -924,7 +900,6 @@ function showComic(direction = null) {
 							});
 						});
 					} else if (direction === 'morph') {
-						if (DEBUG_ANIMATION) console.log('🌀 Running MORPH animation');
 						// BLUR MORPH animation - blur out old, fade in new
 						const outgoingClone = comicImg.cloneNode(true);
 						outgoingClone.removeAttribute('id');
@@ -932,7 +907,6 @@ function showComic(direction = null) {
 						outgoingClone.classList.remove('throw-out-left', 'throw-out-right', 'fade-in-new', 'visible', 'no-transition');
 						outgoingClone.classList.add('comic-pixelate-outgoing');
 						wrapper.appendChild(outgoingClone);
-						if (DEBUG_ANIMATION) console.log('🌀 Clone created and appended');
 						
 						// Reset the main comic and disable transition to prevent any sliding
 						comicImg.classList.add('no-transition');
@@ -947,7 +921,6 @@ function showComic(direction = null) {
 						
 						// Wait for new image to load, THEN blur out clone
 						const startMorph = () => {
-							if (DEBUG_ANIMATION) console.log('🌀 startMorph() called - blurring out clone');
 							// Use requestAnimationFrame to ensure the DOM is ready
 							requestAnimationFrame(() => {
 								outgoingClone.classList.add('morph-out');
@@ -955,7 +928,6 @@ function showComic(direction = null) {
 							
 							// Remove clone and cleanup after animation completes
 							setTimeout(() => {
-								if (DEBUG_ANIMATION) console.log('🌀 Morph complete - cleaning up');
 								outgoingClone.remove();
 								comicImg.classList.remove('no-transition');
 								comicImg.style.transform = '';
@@ -965,24 +937,18 @@ function showComic(direction = null) {
 						// Use requestAnimationFrame to ensure browser has processed the src change
 						requestAnimationFrame(() => {
 							if (comicImg.complete) {
-								if (DEBUG_ANIMATION) console.log('🌀 Image already complete, starting morph immediately');
 								startMorph();
 							} else {
-								if (DEBUG_ANIMATION) console.log('🌀 Waiting for image load...');
 								comicImg.addEventListener('load', startMorph, { once: true });
 							}
 						});
 					}
 				} else {
 					// First load or no animation - just set source
-					if (DEBUG_ANIMATION) console.log('❌ Animation skipped - direction:', direction, 'hasExistingImage:', hasExistingImage);
 					comicImg.src = pictureUrl;
 				}
 			} else if (previousclicked) {
-				if (DEBUG_ANIMATION) console.log('⚠️ URL same but previousclicked=true, calling PreviousClick()');
 				PreviousClick();
-			} else {
-				if (DEBUG_ANIMATION) console.log('⏭️ URL unchanged, skipping update entirely');
 			}
 			
 			previousclicked = false;
