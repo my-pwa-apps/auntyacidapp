@@ -36,6 +36,32 @@ main {
 	text-align: center;
 }
 
+/* Titlebar Drag Region for Window Controls Overlay mode */
+.titlebar-drag-region {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: env(titlebar-area-height, 0px);
+	-webkit-app-region: drag;
+	app-region: drag;
+	z-index: 9999;
+	background: transparent;
+	/* Only show in window-controls-overlay mode */
+	display: none;
+}
+
+@media (display-mode: window-controls-overlay) {
+	.titlebar-drag-region {
+		display: block;
+	}
+	
+	body {
+		/* Add padding to prevent content from going under titlebar */
+		padding-top: env(titlebar-area-height, 0px);
+	}
+}
+
 /* App Header / Logo */
 .app-header {
 	text-align: center;
