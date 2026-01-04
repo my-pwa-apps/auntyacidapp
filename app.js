@@ -860,7 +860,13 @@ function showComic(direction = null) {
 				const wrapper = $('comic-wrapper');
 				
 				// Animate transition based on direction
-				if (direction && comicImg.src && comicImg.src !== window.location.href) {
+				// Check if there's an existing image to animate from (not empty, not the page URL)
+				const hasExistingImage = comicImg.src && 
+					comicImg.src !== '' && 
+					comicImg.src !== window.location.href &&
+					!comicImg.src.endsWith('/');
+				
+				if (direction && hasExistingImage) {
 					if (direction === 'next' || direction === 'previous') {
 						// THROW-OUT animation - fling old comic away while new fades in
 						const throwOutClass = direction === 'previous' ? 'throw-out-right' : 'throw-out-left';
