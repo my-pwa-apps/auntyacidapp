@@ -85,9 +85,6 @@
   ],
   "dir": "ltr",
   "lang": "en",
-  "display_override": [
-    "window-controls-overlay"
-  ],
   "prefer_related_applications": false,
   "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
   "related_applications": [
@@ -97,23 +94,16 @@
       "id": "auntyacidapp.pages.dev"
     }
   ],
-  "edge_side_panel": {
-    "preferred_width": 400
-  },
   "screenshots": [
     {
       "src": "./screenshots/screenshot1.png",
       "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "Aunty Acid Comics on Desktop"
+      "type": "image/png"
     },
     {
       "src": "./screenshots/screenshot2.png",
       "sizes": "390x844",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Aunty Acid Comics on Mobile"
+      "type": "image/png"
     }
   ]
 }

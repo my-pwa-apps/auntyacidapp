@@ -18,7 +18,52 @@ let previousclicked = false;
 let deferredPrompt = null;
 
 const START_DATE = new Date('2013-05-06');
+const GO_COMICS_BASE_URL = 'https://www.gocomics.com/aunty-acid';
 const CORS_PROXY = 'https://corsproxy.garfieldapp.workers.dev/cors-proxy?';
+
+function getStoredJson(key, fallbackValue) {
+	try {
+		const storedValue = localStorage.getItem(key);
+		return storedValue ? JSON.parse(storedValue) : fallbackValue;
+	} catch (error) {
+		localStorage.removeItem(key);
+		return fallbackValue;
+	}
+}
+
+function buildComicPageUrl(comicDate) {
+	return `${GO_COMICS_BASE_URL}/${comicDate}`;
+}
+
+function buildProxyUrl(url) {
+	return `${CORS_PROXY}${url}`;
+}
+
+async function fetchComicPageHtml(comicDate) {
+	const comicPageUrl = buildComicPageUrl(comicDate);
+
+	try {
+		const response = await fetch(comicPageUrl);
+		if (!response.ok) {
+			throw new Error(`Direct fetch failed (${response.status})`);
+		}
+		return { text: await response.text(), usedProxy: false };
+	} catch (directError) {
+		const proxyResponse = await fetch(buildProxyUrl(comicPageUrl));
+		if (!proxyResponse.ok) {
+			throw new Error(`Proxy fetch failed (${proxyResponse.status}) after ${directError.message}`);
+		}
+		return { text: await proxyResponse.text(), usedProxy: true };
+	}
+}
+
+async function fetchShareImageBlob(imageUrl) {
+	const response = await fetch(`${CORS_PROXY}${encodeURIComponent(imageUrl)}`);
+	if (!response.ok) {
+		throw new Error(`Proxy image fetch failed (${response.status})`);
+	}
+	return response.blob();
+}
 
 /**
  * Preload adjacent comic images for faster navigation
@@ -35,10 +80,10 @@ function preloadAdjacentComics(currentDate) {
 		const y = prevDate.getFullYear();
 		const m = String(prevDate.getMonth() + 1).padStart(2, '0');
 		const d = String(prevDate.getDate()).padStart(2, '0');
-		const prevUrl = `${CORS_PROXY}https://www.gocomics.com/aunty-acid/${y}/${m}/${d}`;
+		const prevComicDate = `${y}/${m}/${d}`;
 		
-		fetch(prevUrl)
-			.then(response => response.text())
+		fetchComicPageHtml(prevComicDate)
+			.then(({ text }) => text)
 			.then(text => {
 				const imageUrl = extractComicImageUrl(text);
 				if (imageUrl) {
@@ -46,7 +91,9 @@ function preloadAdjacentComics(currentDate) {
 					img.src = imageUrl;
 				}
 			})
-			.catch(() => {}); // Silently ignore errors
+			.catch(error => {
+				console.warn('Previous comic preload failed', prevComicDate, error);
+			});
 	}
 	
 	// Preload next comic (if not after today)
@@ -56,10 +103,10 @@ function preloadAdjacentComics(currentDate) {
 		const y = nextDate.getFullYear();
 		const m = String(nextDate.getMonth() + 1).padStart(2, '0');
 		const d = String(nextDate.getDate()).padStart(2, '0');
-		const nextUrl = `${CORS_PROXY}https://www.gocomics.com/aunty-acid/${y}/${m}/${d}`;
+		const nextComicDate = `${y}/${m}/${d}`;
 		
-		fetch(nextUrl)
-			.then(response => response.text())
+		fetchComicPageHtml(nextComicDate)
+			.then(({ text }) => text)
 			.then(text => {
 				const imageUrl = extractComicImageUrl(text);
 				if (imageUrl) {
@@ -67,7 +114,9 @@ function preloadAdjacentComics(currentDate) {
 					img.src = imageUrl;
 				}
 			})
-			.catch(() => {}); // Silently ignore errors
+			.catch(error => {
+				console.warn('Next comic preload failed', nextComicDate, error);
+			});
 	}
 }
 
@@ -100,7 +149,10 @@ function extractComicImageUrl(text) {
 
 // Helper functions
 const $ = (id) => document.getElementById(id);
-const getFavs = () => JSON.parse(localStorage.getItem('favs')) || [];
+const getFavs = () => {
+	const favorites = getStoredJson('favs', []);
+	return Array.isArray(favorites) ? favorites : [];
+};
 const setFavs = (favs) => localStorage.setItem('favs', JSON.stringify(favs));
 
 function updateFavIcon(isFavorite) {
@@ -272,8 +324,7 @@ function clampToolbarInView() {
 	}
 	
 	// Custom position mode - maintain relative positioning
-	const savedPosRaw = localStorage.getItem('toolbarPos');
-	const savedPos = savedPosRaw ? JSON.parse(savedPosRaw) : null;
+	const savedPos = getStoredJson('toolbarPos', null);
 	
 	if (!savedPos) {
 		// No saved position - center between logo and comic
@@ -380,8 +431,7 @@ function initializeToolbar() {
 	if (!toolbar) return;
 	
 	// Check for saved position
-	const savedPosRaw = localStorage.getItem('toolbarPos');
-	const savedPos = savedPosRaw ? JSON.parse(savedPosRaw) : null;
+	const savedPos = getStoredJson('toolbarPos', null);
 	const isOptimalMode = localStorage.getItem('toolbarOptimal') === 'true';
 	
 	if (savedPos && typeof savedPos.top === 'number') {
@@ -676,47 +726,24 @@ async function Share() {
 	}
 	
 	try {
-		// Load image into canvas to handle CORS and create shareable blob
-		const tempImg = new Image();
-		tempImg.crossOrigin = 'anonymous';
-		
-		// Try loading directly first, then via proxy
-		await new Promise((resolve, reject) => {
-			const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
-			tempImg.onload = () => { clearTimeout(timeout); resolve(); };
-			tempImg.onerror = () => { clearTimeout(timeout); reject(new Error('Load failed')); };
-			tempImg.src = pictureUrl;
-		}).catch(async () => {
-			// Try with CORS proxy on failure
-			const proxyUrl = `${CORS_PROXY}${encodeURIComponent(pictureUrl)}`;
-			return new Promise((resolve, reject) => {
-				const timeout = setTimeout(() => reject(new Error('Proxy timeout')), 5000);
-				tempImg.onload = () => { clearTimeout(timeout); resolve(); };
-				tempImg.onerror = () => { clearTimeout(timeout); reject(new Error('Proxy failed')); };
-				tempImg.src = proxyUrl;
-			});
-		});
-		
-		// Convert image to blob via canvas
-		const canvas = document.createElement('canvas');
-		canvas.width = tempImg.width;
-		canvas.height = tempImg.height;
-		canvas.getContext('2d').drawImage(tempImg, 0, 0);
-		
-		const blob = await new Promise((resolve, reject) => {
-			canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Blob creation failed')), 'image/jpeg', 0.95);
-		});
-		
-		// Share with file
+		const blob = await fetchShareImageBlob(pictureUrl);
 		const file = new File([blob], 'auntyacid.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+
+		if (navigator.canShare?.({ files: [file] })) {
+			await navigator.share({
+				url: 'https://auntyacidapp.pages.dev',
+				text: `Shared from AuntyAcid App - Comic for ${formattedComicDate || 'today'}`,
+				files: [file]
+			});
+			return;
+		}
+
 		await navigator.share({
 			url: 'https://auntyacidapp.pages.dev',
-			text: 'Shared from AuntyAcid App',
-			files: [file]
+			text: `Shared from AuntyAcid App - Comic for ${formattedComicDate || 'today'}`
 		});
 	} catch (err) {
-		// Fallback to text-only sharing on error
-		if (err.name === 'SecurityError' || err.message?.includes('failed')) {
+		if (err.name !== 'AbortError') {
 			try {
 				await navigator.share({
 					url: 'https://auntyacidapp.pages.dev',
@@ -724,11 +751,12 @@ async function Share() {
 				});
 				return;
 			} catch (fallbackErr) {
-				// Silent fail if sharing canceled
+				if (fallbackErr.name === 'AbortError') {
+					return;
+				}
 			}
 		}
 		
-		// Show error only if not user-canceled
 		if (err.name !== 'AbortError') {
 			showNotification('Failed to share. Please try again.');
 		}
@@ -740,6 +768,7 @@ function Addfav() {
 	formattedComicDate = `${year}/${month}/${day}`;
 	let favs = getFavs();
 	const index = favs.indexOf(formattedComicDate);
+	const showFavoritesOnly = $('showfavs').checked;
 	
 	if (index === -1) {
 		favs.push(formattedComicDate);
@@ -751,13 +780,28 @@ function Addfav() {
 		if (favs.length === 0) {
 			$('showfavs').checked = false;
 			$('showfavs').disabled = true;
+			localStorage.setItem('showfavs', 'false');
 		}
 	}
 	
 	favs.sort();
 	setFavs(favs);
+	updateExportButtonState();
+
+	if (index !== -1 && showFavoritesOnly) {
+		if (favs.length > 0) {
+			const fallbackDate = favs[Math.min(index, favs.length - 1)];
+			currentselectedDate = new Date(fallbackDate);
+		} else {
+			currentselectedDate = new Date();
+		}
+	}
+
 	CompareDates();
-	showComic();
+
+	if (index !== -1 && showFavoritesOnly) {
+		showComic('morph');
+	}
 }
 
 // Navigation functions
@@ -836,14 +880,10 @@ function showComic(direction = null) {
 	formattedComicDate = `${year}/${month}/${day}`;
 	$('DatePicker').value = formattedDate;
 	
-	const siteUrl = `${CORS_PROXY}https://www.gocomics.com/aunty-acid/${formattedComicDate}`;
 	localStorage.setItem('lastcomic', currentselectedDate);
 	
-	fetch(siteUrl)
-		.then(response => {
-			if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-			return response.text();
-		})
+	fetchComicPageHtml(formattedComicDate)
+		.then(({ text }) => text)
 		.then(text => {
 			// Extract comic image URL using the reusable function
 			const imageUrl = extractComicImageUrl(text);
@@ -975,7 +1015,8 @@ function showComic(direction = null) {
 			}
 		})
 		.catch(error => {
-			showNotification('Could not load comic');
+			console.warn('Comic fetch failed', formattedComicDate, error);
+			showNotification('Could not load comic. Please try again.');
 		});
 }
 
@@ -1056,7 +1097,6 @@ function initApp() {
 	} else {
 		currentselectedDate = $('DatePicker').valueAsDate = new Date();
 		$('Next').disabled = true;
-		$('Current').disabled = true;
 	}
 	
 	formatDate(new Date());

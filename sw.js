@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auntyacid-v42';
+const CACHE_NAME = 'auntyacid-v43';
 
 // Assets to cache on install (use ./ relative paths like GarfieldApp/DirkJanApp)
 const PRECACHE_ASSETS = [
