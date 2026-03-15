@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auntyacid-v43';
+const CACHE_NAME = 'auntyacid-v44';
 
 // Assets to cache on install (use ./ relative paths like GarfieldApp/DirkJanApp)
 const PRECACHE_ASSETS = [
@@ -46,7 +46,8 @@ async function cacheFirstStrategy(request, cacheName) {
   }
 
   try {
-    const networkResponse = await fetch(request);
+    const fetchRequest = new Request(request, { redirect: 'follow' });
+    const networkResponse = await fetch(fetchRequest);
     if (networkResponse && networkResponse.status === 200) {
       const cache = await caches.open(cacheName);
       cache.put(request, networkResponse.clone());
@@ -69,7 +70,7 @@ async function cacheFirstWithLimit(request, cacheName, maxSize) {
   }
 
   try {
-    const networkResponse = await fetch(request);
+    const networkResponse = await fetch(new Request(request, { redirect: 'follow' }));
     if (networkResponse?.status === 200) {
       const cache = await caches.open(cacheName);
       
@@ -93,7 +94,7 @@ async function cacheFirstWithLimit(request, cacheName, maxSize) {
 // Network-first strategy for dynamic resources
 async function networkFirstStrategy(request, cacheName) {
   try {
-    const networkResponse = await fetch(request);
+    const networkResponse = await fetch(new Request(request, { redirect: 'follow' }));
     if (networkResponse && networkResponse.status === 200) {
       const cache = await caches.open(cacheName);
       cache.put(request, networkResponse.clone());
