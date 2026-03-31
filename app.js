@@ -1,5 +1,7 @@
 // Aunty Acid Comics App - auntyacidapp.pages.dev
 
+import { getAuthenticatedComic } from './comicExtractor.js';
+
 // Service Worker Registration
 if ('serviceWorker' in navigator) {
 	window.addEventListener('load', () => {
@@ -14,12 +16,15 @@ let currentselectedDate, formattedComicDate, formattedDate;
 let year, month, day;
 let pictureUrl = '';
 let previousUrl = '';
-let previousclicked = false;
 let deferredPrompt = null;
 
-const START_DATE = new Date('2013-05-06');
-const GO_COMICS_BASE_URL = 'https://www.gocomics.com/aunty-acid';
-const CORS_PROXY = 'https://corsproxy.garfieldapp.workers.dev/cors-proxy?';
+// ArcaMax article-ID navigation state
+let currentArticleId = null;
+let prevArticleId = null;
+let nextArticleId = null;
+let currentComicUrl = '';
+
+const IMAGE_CACHE_PROXY = 'https://corsproxy.garfieldapp.workers.dev/?';
 
 function getStoredJson(key, fallbackValue) {
 	try {
@@ -31,120 +36,26 @@ function getStoredJson(key, fallbackValue) {
 	}
 }
 
-function buildComicPageUrl(comicDate) {
-	return `${GO_COMICS_BASE_URL}/${comicDate}`;
-}
-
-function buildProxyUrl(url) {
-	return `${CORS_PROXY}${url}`;
-}
-
-async function fetchComicPageHtml(comicDate) {
-	const comicPageUrl = buildComicPageUrl(comicDate);
-
-	try {
-		const response = await fetch(comicPageUrl);
-		if (!response.ok) {
-			throw new Error(`Direct fetch failed (${response.status})`);
-		}
-		return { text: await response.text(), usedProxy: false };
-	} catch (directError) {
-		const proxyResponse = await fetch(buildProxyUrl(comicPageUrl));
-		if (!proxyResponse.ok) {
-			throw new Error(`Proxy fetch failed (${proxyResponse.status}) after ${directError.message}`);
-		}
-		return { text: await proxyResponse.text(), usedProxy: true };
-	}
-}
-
-async function fetchShareImageBlob(imageUrl) {
-	const response = await fetch(`${CORS_PROXY}${encodeURIComponent(imageUrl)}`);
-	if (!response.ok) {
-		throw new Error(`Proxy image fetch failed (${response.status})`);
-	}
-	return response.blob();
-}
-
 /**
  * Preload adjacent comic images for faster navigation
- * @param {Date} currentDate - Current comic date
  */
-function preloadAdjacentComics(currentDate) {
-	const today = new Date();
-	today.setHours(0, 0, 0, 0);
-	
-	// Preload previous comic (if not before start date)
-	const prevDate = new Date(currentDate);
-	prevDate.setDate(prevDate.getDate() - 1);
-	if (prevDate >= START_DATE) {
-		const y = prevDate.getFullYear();
-		const m = String(prevDate.getMonth() + 1).padStart(2, '0');
-		const d = String(prevDate.getDate()).padStart(2, '0');
-		const prevComicDate = `${y}/${m}/${d}`;
-		
-		fetchComicPageHtml(prevComicDate)
-			.then(({ text }) => text)
-			.then(text => {
-				const imageUrl = extractComicImageUrl(text);
-				if (imageUrl) {
-					const img = new Image();
-					img.src = imageUrl;
-				}
-			})
-			.catch(error => {
-				console.warn('Previous comic preload failed', prevComicDate, error);
-			});
+function preloadAdjacentComics() {
+	if (prevArticleId) {
+		getAuthenticatedComic(prevArticleId).then(result => {
+			if (result.success && result.imageUrl) {
+				const img = new Image();
+				img.src = result.imageUrl;
+			}
+		}).catch(() => {});
 	}
-	
-	// Preload next comic (if not after today)
-	const nextDate = new Date(currentDate);
-	nextDate.setDate(nextDate.getDate() + 1);
-	if (nextDate <= today) {
-		const y = nextDate.getFullYear();
-		const m = String(nextDate.getMonth() + 1).padStart(2, '0');
-		const d = String(nextDate.getDate()).padStart(2, '0');
-		const nextComicDate = `${y}/${m}/${d}`;
-		
-		fetchComicPageHtml(nextComicDate)
-			.then(({ text }) => text)
-			.then(text => {
-				const imageUrl = extractComicImageUrl(text);
-				if (imageUrl) {
-					const img = new Image();
-					img.src = imageUrl;
-				}
-			})
-			.catch(error => {
-				console.warn('Next comic preload failed', nextComicDate, error);
-			});
+	if (nextArticleId) {
+		getAuthenticatedComic(nextArticleId).then(result => {
+			if (result.success && result.imageUrl) {
+				const img = new Image();
+				img.src = result.imageUrl;
+			}
+		}).catch(() => {});
 	}
-}
-
-/**
- * Extract comic image URL from GoComics HTML
- * @param {string} text - HTML content
- * @returns {string|null} Image URL or null
- */
-function extractComicImageUrl(text) {
-	// Try featureassets CDN (current GoComics CDN)
-	let match = text.match(/https:\/\/featureassets\.gocomics\.com\/assets\/[a-f0-9]+/);
-	if (match) return match[0];
-	
-	// Try amuniversal CDN (legacy)
-	match = text.match(/https:\/\/assets\.amuniversal\.com\/[a-f0-9]+/);
-	if (match) return match[0];
-	
-	// Try og:image meta tag
-	match = text.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
-	if (match && match[1] && (match[1].includes('gocomics') || match[1].includes('amuniversal'))) {
-		return match[1];
-	}
-	
-	// Fallback to picture tag
-	match = text.match(/<picture[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<\/picture>/i);
-	if (match && match[1]) return match[1];
-	
-	return null;
 }
 
 // Helper functions
@@ -726,8 +637,12 @@ async function Share() {
 	}
 	
 	try {
-		const blob = await fetchShareImageBlob(pictureUrl);
-		const file = new File([blob], 'auntyacid.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+		const proxyUrl = IMAGE_CACHE_PROXY + encodeURIComponent(pictureUrl);
+		const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const blob = await response.blob();
+		const ext = blob.type === 'image/gif' ? 'gif' : 'jpg';
+		const file = new File([blob], `auntyacid.${ext}`, { type: blob.type || 'image/jpeg', lastModified: Date.now() });
 
 		if (navigator.canShare?.({ files: [file] })) {
 			await navigator.share({
@@ -792,15 +707,16 @@ function Addfav() {
 		if (favs.length > 0) {
 			const fallbackDate = favs[Math.min(index, favs.length - 1)];
 			currentselectedDate = new Date(fallbackDate);
+			const artId = findArticleIdForDate(fallbackDate);
+			CompareDates();
+			showComic('morph', artId || undefined);
 		} else {
 			currentselectedDate = new Date();
+			CompareDates();
+			showComic('morph', 'latest');
 		}
-	}
-
-	CompareDates();
-
-	if (index !== -1 && showFavoritesOnly) {
-		showComic('morph');
+	} else {
+		CompareDates();
 	}
 }
 
@@ -811,13 +727,17 @@ function PreviousClick() {
 		const index = favs.indexOf(formattedComicDate);
 		if (index > 0) {
 			currentselectedDate = new Date(favs[index - 1]);
+			const artId = findArticleIdForDate(favs[index - 1]);
+			CompareDates();
+			if (artId) {
+				showComic('previous', artId);
+			} else {
+				showComic('previous');
+			}
 		}
-	} else {
-		currentselectedDate.setDate(currentselectedDate.getDate() - 1);
+	} else if (prevArticleId) {
+		showComic('previous', prevArticleId);
 	}
-	previousclicked = true;
-	CompareDates();
-	showComic('previous'); // Filmstrip slide animation
 }
 
 function NextClick() {
@@ -826,30 +746,58 @@ function NextClick() {
 		const index = favs.indexOf(formattedComicDate);
 		if (index < favs.length - 1) {
 			currentselectedDate = new Date(favs[index + 1]);
+			const artId = findArticleIdForDate(favs[index + 1]);
+			CompareDates();
+			if (artId) {
+				showComic('next', artId);
+			} else {
+				showComic('next');
+			}
 		}
-	} else {
-		currentselectedDate.setDate(currentselectedDate.getDate() + 1);
+	} else if (nextArticleId) {
+		showComic('next', nextArticleId);
 	}
-	CompareDates();
-	showComic('next'); // Filmstrip slide animation
 }
 
 function FirstClick() {
 	const favs = getFavs();
-	currentselectedDate = $('showfavs').checked 
-		? new Date(favs[0]) 
-		: new Date(Date.UTC(2013, 4, 6, 12));
-	CompareDates();
-	showComic('morph'); // Blur morph animation
+	if ($('showfavs').checked) {
+		currentselectedDate = new Date(favs[0]);
+		const artId = findArticleIdForDate(favs[0]);
+		CompareDates();
+		showComic('morph', artId || undefined);
+	} else {
+		_navigateToOldest();
+	}
+}
+
+async function _navigateToOldest() {
+	if (!prevArticleId) return;
+	$('First').disabled = true;
+
+	let candidateId = prevArticleId;
+	while (candidateId) {
+		const result = await getAuthenticatedComic(candidateId);
+		if (!result.success) break;
+		if (!result.prevArticleId) {
+			showComic('previous', candidateId);
+			return;
+		}
+		candidateId = result.prevArticleId;
+	}
+	if (candidateId) showComic('previous', candidateId);
 }
 
 function LastClick() {
 	const favs = getFavs();
-	currentselectedDate = $('showfavs').checked 
-		? new Date(favs[favs.length - 1]) 
-		: new Date();
-	CompareDates();
-	showComic('morph'); // Blur morph animation
+	if ($('showfavs').checked) {
+		currentselectedDate = new Date(favs[favs.length - 1]);
+		const artId = findArticleIdForDate(favs[favs.length - 1]);
+		CompareDates();
+		showComic('morph', artId || 'latest');
+	} else {
+		showComic('morph', 'latest');
+	}
 }
 
 function RandomClick() {
@@ -857,208 +805,311 @@ function RandomClick() {
 	if ($('showfavs').checked) {
 		const randomIndex = Math.floor(Math.random() * favs.length);
 		currentselectedDate = new Date(favs[randomIndex]);
+		const artId = findArticleIdForDate(favs[randomIndex]);
+		CompareDates();
+		showComic('morph', artId || undefined);
 	} else {
-		const start = START_DATE.getTime();
-		const end = Date.now();
-		currentselectedDate = new Date(start + Math.random() * (end - start));
+		_navigateToRandom();
 	}
-	CompareDates();
-	showComic('morph'); // Blur morph animation
+}
+
+async function _navigateToRandom() {
+	const strips = await buildArchiveIndex();
+	if (!strips.length) {
+		showComic('morph', 'latest');
+		return;
+	}
+	const candidates = strips.filter(s => s.articleId !== currentArticleId);
+	const pool = candidates.length ? candidates : strips;
+	const pick = pool[Math.floor(Math.random() * pool.length)];
+	showComic('morph', pick.articleId);
 }
 
 function DateChange() {
-	currentselectedDate = new Date($('DatePicker').value);
+	currentselectedDate = new Date($('DatePicker').value + 'T12:00:00');
+	if (isNaN(currentselectedDate)) return;
 	CompareDates();
-	showComic('morph'); // Blur morph animation
+	_dateChangeImpl();
+}
+
+async function _dateChangeImpl() {
+	const strips = await buildArchiveIndex();
+	if (!strips.length) {
+		showComic('morph', 'latest');
+		return;
+	}
+	const targetTime = currentselectedDate.getTime();
+	let closest = null;
+	let closestDiff = Infinity;
+	for (const s of strips) {
+		if (!s.date) continue;
+		const diff = Math.abs(new Date(s.date).getTime() - targetTime);
+		if (diff < closestDiff) {
+			closestDiff = diff;
+			closest = s;
+		}
+	}
+	showComic('morph', closest ? closest.articleId : 'latest');
+}
+
+// ---- ArcaMax archive index (for Random & DatePicker) ----
+const _ARCHIVE_TTL_MS = 60 * 60 * 1000;
+let _archiveBuildPromise = null;
+let _archiveStrips = [];
+
+function _localDateStr(d) {
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function buildArchiveIndex(forceRefresh = false) {
+	if (_archiveBuildPromise) return _archiveBuildPromise;
+
+	const cached = getStoredJson('arcamax_archive', null);
+	if (!forceRefresh && cached && cached.builtAt && (Date.now() - cached.builtAt) < _ARCHIVE_TTL_MS && cached.strips?.length > 0) {
+		_archiveStrips = cached.strips.map(s => ({ ...s, date: s.date ? new Date(s.date.length === 10 ? s.date + 'T12:00:00' : s.date) : null }));
+		return _archiveStrips;
+	}
+
+	_archiveBuildPromise = (async () => {
+		const strips = [];
+		let result = await getAuthenticatedComic('latest');
+		if (!result.success) { _archiveBuildPromise = null; return strips; }
+
+		strips.push({ articleId: result.articleId, date: result.stripDate || null });
+		let candidateId = result.prevArticleId;
+
+		while (candidateId && strips.length < 40) {
+			result = await getAuthenticatedComic(candidateId);
+			if (!result.success) break;
+			strips.push({ articleId: result.articleId, date: result.stripDate || null });
+			candidateId = result.prevArticleId;
+		}
+
+		localStorage.setItem('arcamax_archive', JSON.stringify({
+			builtAt: Date.now(),
+			strips: strips.map(s => ({ ...s, date: s.date ? _localDateStr(s.date) : null }))
+		}));
+		_archiveStrips = strips;
+		_archiveBuildPromise = null;
+		return strips;
+	})();
+
+	return _archiveBuildPromise;
+}
+
+function findArticleIdForDate(dateStr) {
+	// dateStr format: "YYYY/MM/DD"
+	const targetISO = dateStr.replace(/\//g, '-');
+	for (const s of _archiveStrips) {
+		if (s.date && _localDateStr(s.date instanceof Date ? s.date : new Date(s.date)) === targetISO) {
+			return s.articleId;
+		}
+	}
+	return null;
 }
 
 // Display comic with animation
 // direction: 'next', 'previous' for filmstrip slide; 'morph' for blur effect; null for no animation
-function showComic(direction = null) {
-	formatDate(currentselectedDate);
-	formattedDate = `${year}-${month}-${day}`;
-	formattedComicDate = `${year}/${month}/${day}`;
-	$('DatePicker').value = formattedDate;
-	
-	localStorage.setItem('lastcomic', currentselectedDate);
-	
-	fetchComicPageHtml(formattedComicDate)
-		.then(({ text }) => text)
-		.then(text => {
-			// Extract comic image URL using the reusable function
-			const imageUrl = extractComicImageUrl(text);
-			
-			if (!imageUrl) {
-				showNotification('Could not load comic for this date');
-				return;
-			}
-			
-			pictureUrl = imageUrl;
-			
-			if (pictureUrl !== previousUrl) {
-				const comicImg = $('comic');
-				const wrapper = $('comic-wrapper');
-				
-				// Animate transition based on direction
-				// Check if there's an existing image to animate from (not empty, not the page URL)
-				const hasExistingImage = comicImg.src && 
-					comicImg.src !== '' && 
-					comicImg.src !== window.location.href &&
-					!comicImg.src.endsWith('/');
-				
-				if (direction && hasExistingImage) {
-					if (direction === 'next' || direction === 'previous') {
-						// THROW-OUT animation - fling old comic away while new fades in
-						const throwOutClass = direction === 'previous' ? 'throw-out-right' : 'throw-out-left';
-						
-						// Create a clone of current comic to throw out
-						const outgoingClone = comicImg.cloneNode(true);
-						outgoingClone.removeAttribute('id');
-						outgoingClone.classList.add('comic-outgoing');
-						outgoingClone.classList.remove('throw-out-left', 'throw-out-right', 'no-transition', 'fade-in-new', 'visible');
-						wrapper.appendChild(outgoingClone);
-						
-						// Set new image source - start hidden, fade in
-						comicImg.classList.add('fade-in-new');
-						comicImg.src = pictureUrl;
-						
-						// Force reflow
-						outgoingClone.offsetHeight;
-						
+async function showComic(direction = null, articleId = null) {
+	// Determine which article to load
+	const target = articleId || currentArticleId || 'latest';
+
+	// If we have a valid currentselectedDate, format it for UI
+	if (currentselectedDate && !isNaN(new Date(currentselectedDate))) {
+		formatDate(currentselectedDate);
+		formattedDate = `${year}-${month}-${day}`;
+		formattedComicDate = `${year}/${month}/${day}`;
+		$('DatePicker').value = formattedDate;
+	}
+
+	try {
+		const result = await getAuthenticatedComic(target);
+
+		if (!result.success || !result.imageUrl) {
+			showNotification('Could not load comic for this date');
+			return;
+		}
+
+		// Update navigation state
+		currentArticleId = result.articleId;
+		prevArticleId = result.prevArticleId;
+		nextArticleId = result.nextArticleId;
+
+		// Update date from strip if available
+		if (result.stripDate && !isNaN(result.stripDate)) {
+			currentselectedDate = result.stripDate;
+			formatDate(currentselectedDate);
+			formattedDate = `${year}-${month}-${day}`;
+			formattedComicDate = `${year}/${month}/${day}`;
+			$('DatePicker').value = formattedDate;
+		}
+
+		pictureUrl = result.imageUrl;
+
+		if (pictureUrl !== previousUrl) {
+			const comicImg = $('comic');
+			const wrapper = $('comic-wrapper');
+
+			const hasExistingImage = comicImg.src &&
+				comicImg.src !== '' &&
+				comicImg.src !== window.location.href &&
+				!comicImg.src.endsWith('/');
+
+			if (direction && hasExistingImage) {
+				if (direction === 'next' || direction === 'previous') {
+					const throwOutClass = direction === 'previous' ? 'throw-out-right' : 'throw-out-left';
+
+					const outgoingClone = comicImg.cloneNode(true);
+					outgoingClone.removeAttribute('id');
+					outgoingClone.classList.add('comic-outgoing');
+					outgoingClone.classList.remove('throw-out-left', 'throw-out-right', 'no-transition', 'fade-in-new', 'visible');
+					wrapper.appendChild(outgoingClone);
+
+					comicImg.classList.add('fade-in-new');
+					comicImg.src = pictureUrl;
+
+					outgoingClone.offsetHeight;
+
+					requestAnimationFrame(() => {
 						requestAnimationFrame(() => {
-							requestAnimationFrame(() => {
-								// Throw out the old comic
-								outgoingClone.classList.add(throwOutClass);
-								// Fade in new comic
-								comicImg.classList.add('visible');
-								
-								// Cleanup after animation
-								setTimeout(() => {
-									outgoingClone.remove();
-									comicImg.classList.remove('fade-in-new', 'visible');
-								}, 400);
-							});
-						});
-					} else if (direction === 'morph') {
-						// BLUR MORPH animation - blur out old, fade in new
-						const outgoingClone = comicImg.cloneNode(true);
-						outgoingClone.removeAttribute('id');
-						// Remove any leftover animation classes from the clone
-						outgoingClone.classList.remove('throw-out-left', 'throw-out-right', 'fade-in-new', 'visible', 'no-transition');
-						outgoingClone.classList.add('comic-pixelate-outgoing');
-						wrapper.appendChild(outgoingClone);
-						
-						// Reset the main comic and disable transition to prevent any sliding
-						comicImg.classList.add('no-transition');
-						comicImg.classList.remove('throw-out-left', 'throw-out-right', 'fade-in-new', 'visible');
-						comicImg.style.transform = 'translateX(0)';
-						
-						// Force reflow to apply changes immediately
-						comicImg.offsetHeight;
-						
-						// Load new image underneath
-						comicImg.src = pictureUrl;
-						
-						// Wait for new image to load, THEN blur out clone
-						const startMorph = () => {
-							// Use requestAnimationFrame to ensure the DOM is ready
-							requestAnimationFrame(() => {
-								outgoingClone.classList.add('morph-out');
-							});
-							
-							// Remove clone and cleanup after animation completes
+							outgoingClone.classList.add(throwOutClass);
+							comicImg.classList.add('visible');
+
 							setTimeout(() => {
 								outgoingClone.remove();
-								comicImg.classList.remove('no-transition');
-								comicImg.style.transform = '';
-							}, 600);
-						};
-						
-						// Use requestAnimationFrame to ensure browser has processed the src change
-						requestAnimationFrame(() => {
-							if (comicImg.complete) {
-								startMorph();
-							} else {
-								comicImg.addEventListener('load', startMorph, { once: true });
-							}
+								comicImg.classList.remove('fade-in-new', 'visible');
+							}, 400);
 						});
-					}
-				} else {
-					// First load or no animation - just set source
+					});
+				} else if (direction === 'morph') {
+					const outgoingClone = comicImg.cloneNode(true);
+					outgoingClone.removeAttribute('id');
+					outgoingClone.classList.remove('throw-out-left', 'throw-out-right', 'fade-in-new', 'visible', 'no-transition');
+					outgoingClone.classList.add('comic-pixelate-outgoing');
+					wrapper.appendChild(outgoingClone);
+
+					comicImg.classList.add('no-transition');
+					comicImg.classList.remove('throw-out-left', 'throw-out-right', 'fade-in-new', 'visible');
+					comicImg.style.transform = 'translateX(0)';
+
+					comicImg.offsetHeight;
+
 					comicImg.src = pictureUrl;
+
+					const startMorph = () => {
+						requestAnimationFrame(() => {
+							outgoingClone.classList.add('morph-out');
+						});
+
+						setTimeout(() => {
+							outgoingClone.remove();
+							comicImg.classList.remove('no-transition');
+							comicImg.style.transform = '';
+						}, 600);
+					};
+
+					requestAnimationFrame(() => {
+						if (comicImg.complete) {
+							startMorph();
+						} else {
+							comicImg.addEventListener('load', startMorph, { once: true });
+						}
+					});
 				}
-			} else if (previousclicked) {
-				PreviousClick();
-			}
-			
-			previousclicked = false;
-			previousUrl = pictureUrl;
-			
-			// Update favorite icon based on current comic
-			const favs = getFavs();
-			updateFavIcon(favs.includes(formattedComicDate));
-			
-			// Update navigation button states
-			CompareDates();
-			
-			// Preload adjacent comics for faster navigation
-			preloadAdjacentComics(currentselectedDate);
-			
-			// Ensure toolbar doesn't overlap the newly loaded comic
-			const comicElement = $('comic');
-			if (comicElement.complete) {
-				setTimeout(clampToolbarInView, 50);
 			} else {
-				comicElement.addEventListener('load', () => {
-					setTimeout(clampToolbarInView, 50);
-				}, { once: true });
+				comicImg.src = pictureUrl;
 			}
-		})
-		.catch(error => {
-			console.warn('Comic fetch failed', formattedComicDate, error);
-			showNotification('Could not load comic. Please try again.');
-		});
+		}
+
+		previousUrl = pictureUrl;
+		currentComicUrl = pictureUrl;
+
+		localStorage.setItem('lastcomic', currentselectedDate);
+
+		// Update favorite icon
+		const favs = getFavs();
+		updateFavIcon(favs.includes(formattedComicDate));
+
+		// Update navigation button states
+		if (!$('showfavs').checked) {
+			$('Previous').disabled = !prevArticleId;
+			$('First').disabled = !prevArticleId;
+			$('Next').disabled = !nextArticleId;
+			$('Last').disabled = !nextArticleId;
+		}
+
+		// Preload adjacent comics
+		preloadAdjacentComics();
+
+		// Ensure toolbar doesn't overlap
+		const comicElement = $('comic');
+		if (comicElement.complete) {
+			setTimeout(clampToolbarInView, 50);
+		} else {
+			comicElement.addEventListener('load', () => {
+				setTimeout(clampToolbarInView, 50);
+			}, { once: true });
+		}
+	} catch (error) {
+		console.warn('Comic fetch failed', error);
+		showNotification('Could not load comic. Please try again.');
+	}
 }
 
 // Date comparison and button state management
 function CompareDates() {
 	const favs = getFavs();
 	const showFavsChecked = $('showfavs').checked;
-	let startDate, endDate;
 	
 	$('DatePicker').disabled = showFavsChecked;
-	startDate = showFavsChecked && favs.length ? new Date(favs[0]) : new Date('2013/05/06');
 	
-	startDate.setHours(0, 0, 0, 0);
-	currentselectedDate.setHours(0, 0, 0, 0);
-	currentselectedDate = new Date(currentselectedDate);
-	
-	const isAtStart = currentselectedDate.getTime() <= startDate.getTime();
-	$('Previous').disabled = isAtStart;
-	$('First').disabled = isAtStart;
-	
-	if (isAtStart) {
-		formatDate(startDate);
-		currentselectedDate = new Date(Date.UTC(year, month - 1, day, 12));
-	}
-	
-	endDate = showFavsChecked && favs.length ? new Date(favs[favs.length - 1]) : new Date();
-	endDate.setHours(0, 0, 0, 0);
-	
-	const isAtEnd = currentselectedDate.getTime() >= endDate.getTime();
-	$('Next').disabled = isAtEnd;
-	$('Last').disabled = isAtEnd;
-	
-	if (isAtEnd) {
-		formatDate(endDate);
-		currentselectedDate = new Date(Date.UTC(year, month - 1, day, 12));
-	}
-	
-	if (showFavsChecked && favs.length === 1) {
-		$('Random').disabled = true;
-		$('Previous').disabled = true;
-		$('First').disabled = true;
+	if (showFavsChecked) {
+		if (!favs.length) {
+			$('showfavs').checked = false;
+			$('showfavs').disabled = true;
+			localStorage.setItem('showfavs', 'false');
+			return;
+		}
+		
+		let startDate = new Date(favs[0]);
+		startDate.setHours(0, 0, 0, 0);
+		currentselectedDate.setHours(0, 0, 0, 0);
+		currentselectedDate = new Date(currentselectedDate);
+		
+		const isAtStart = currentselectedDate.getTime() <= startDate.getTime();
+		$('Previous').disabled = isAtStart;
+		$('First').disabled = isAtStart;
+		
+		if (isAtStart) {
+			formatDate(startDate);
+			currentselectedDate = new Date(Date.UTC(year, month - 1, day, 12));
+		}
+		
+		let endDate = new Date(favs[favs.length - 1]);
+		endDate.setHours(0, 0, 0, 0);
+		
+		const isAtEnd = currentselectedDate.getTime() >= endDate.getTime();
+		$('Next').disabled = isAtEnd;
+		$('Last').disabled = isAtEnd;
+		
+		if (isAtEnd) {
+			formatDate(endDate);
+			currentselectedDate = new Date(Date.UTC(year, month - 1, day, 12));
+		}
+		
+		if (favs.length === 1) {
+			$('Random').disabled = true;
+			$('Previous').disabled = true;
+			$('First').disabled = true;
+		} else {
+			$('Random').disabled = false;
+		}
 	} else {
+		// In ArcaMax mode, button states are driven by article IDs
+		$('Previous').disabled = !prevArticleId;
+		$('First').disabled = !prevArticleId;
+		$('Next').disabled = !nextArticleId;
+		$('Last').disabled = !nextArticleId;
 		$('Random').disabled = false;
 	}
 }
@@ -1082,7 +1133,6 @@ function handleUrlParams() {
 
 // Initialize App
 function initApp() {
-	previousclicked = false;
 	previousUrl = '';
 	
 	const favs = getFavs();
@@ -1091,12 +1141,11 @@ function initApp() {
 	if (favs.length === 0) {
 		$('showfavs').checked = false;
 		$('showfavs').disabled = true;
-		currentselectedDate = $('DatePicker').valueAsDate = new Date();
+		currentselectedDate = new Date();
 	} else if (showFavsChecked) {
 		currentselectedDate = new Date(favs[0]);
 	} else {
-		currentselectedDate = $('DatePicker').valueAsDate = new Date();
-		$('Next').disabled = true;
+		currentselectedDate = new Date();
 	}
 	
 	formatDate(new Date());
@@ -1109,8 +1158,11 @@ function initApp() {
 	// Handle URL parameters
 	handleUrlParams();
 	
-	CompareDates();
-	showComic();
+	// Always start from the latest strip (ArcaMax uses article IDs, not dates)
+	showComic(null, 'latest').then(() => {
+		// Build archive index in background so Random/DatePicker/Favorites work
+		buildArchiveIndex();
+	});
 	updateExportButtonState();
 }
 
