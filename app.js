@@ -147,6 +147,38 @@ function extractComicImageUrl(text) {
 	return null;
 }
 
+// ArcaMax fallback — dynamically imports comicExtractor.js when GoComics is down
+let _arcamaxModule = null;
+let _usingArcamaxFallback = false;
+
+async function fetchFromArcamax() {
+	if (!_arcamaxModule) {
+		_arcamaxModule = await import('./comicExtractor.js');
+	}
+	const result = await _arcamaxModule.getAuthenticatedComic('latest');
+	if (result.success && result.imageUrl) {
+		return result.imageUrl;
+	}
+	return null;
+}
+
+function showArcamaxFallbackNotice() {
+	if (_usingArcamaxFallback) return; // already showing
+	_usingArcamaxFallback = true;
+	const banner = $('arcamaxFallbackNotice');
+	if (banner) {
+		banner.classList.add('visible');
+	}
+}
+
+function hideArcamaxFallbackNotice() {
+	_usingArcamaxFallback = false;
+	const banner = $('arcamaxFallbackNotice');
+	if (banner) {
+		banner.classList.remove('visible');
+	}
+}
+
 // Helper functions
 const $ = (id) => document.getElementById(id);
 const getFavs = () => {
@@ -889,9 +921,23 @@ function showComic(direction = null) {
 			const imageUrl = extractComicImageUrl(text);
 			
 			if (!imageUrl) {
-				showNotification('Could not load comic for this date');
-				return;
+				// GoComics returned a page but no image — try ArcaMax fallback
+				return fetchFromArcamax().then(arcamaxUrl => {
+					if (arcamaxUrl) {
+						showArcamaxFallbackNotice();
+						return arcamaxUrl;
+					}
+					showNotification('Could not load comic for this date');
+					return null;
+				});
 			}
+			
+			// GoComics worked — hide any previous fallback notice
+			hideArcamaxFallbackNotice();
+			return imageUrl;
+		})
+		.then(imageUrl => {
+			if (!imageUrl) return;
 			
 			pictureUrl = imageUrl;
 			
@@ -1015,8 +1061,34 @@ function showComic(direction = null) {
 			}
 		})
 		.catch(error => {
-			console.warn('Comic fetch failed', formattedComicDate, error);
-			showNotification('Could not load comic. Please try again.');
+			console.warn('GoComics fetch failed, trying ArcaMax fallback...', formattedComicDate, error);
+			// GoComics completely failed — try ArcaMax as backup source
+			fetchFromArcamax().then(arcamaxUrl => {
+				if (arcamaxUrl) {
+					showArcamaxFallbackNotice();
+					pictureUrl = arcamaxUrl;
+					const comicImg = $('comic');
+					comicImg.src = pictureUrl;
+					previousUrl = pictureUrl;
+					
+					const favs = getFavs();
+					updateFavIcon(favs.includes(formattedComicDate));
+					CompareDates();
+					
+					const comicElement = $('comic');
+					if (comicElement.complete) {
+						setTimeout(clampToolbarInView, 50);
+					} else {
+						comicElement.addEventListener('load', () => {
+							setTimeout(clampToolbarInView, 50);
+						}, { once: true });
+					}
+				} else {
+					showNotification('Could not load comic. Please try again.');
+				}
+			}).catch(() => {
+				showNotification('Could not load comic. Please try again.');
+			});
 		});
 }
 
@@ -1211,6 +1283,9 @@ document.addEventListener('DOMContentLoaded', () => {
 	
 	// Notification close
 	document.querySelector('.notification-close')?.addEventListener('click', hideNotification);
+	
+	// ArcaMax fallback notice close
+	$('arcamaxNoticeClose')?.addEventListener('click', hideArcamaxFallbackNotice);
 	
 	// Install button
 	$('installBtn')?.addEventListener('click', handleInstall);

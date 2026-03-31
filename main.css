@@ -727,6 +727,55 @@ input[type="date"] {
 	color: #fff;
 }
 
+/* ArcaMax Fallback Notice */
+.arcamax-fallback-notice {
+	display: none;
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 9999;
+	background: linear-gradient(135deg, #e67e22, #d35400);
+	color: #fff;
+	padding: 10px 40px 10px 16px;
+	font-size: 13px;
+	line-height: 1.4;
+	text-align: center;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	animation: slideDown 0.3s ease-out;
+}
+
+.arcamax-fallback-notice.visible {
+	display: block;
+}
+
+.arcamax-fallback-notice p {
+	margin: 0;
+}
+
+.arcamax-notice-close {
+	position: absolute;
+	top: 50%;
+	right: 10px;
+	transform: translateY(-50%);
+	background: none;
+	border: none;
+	color: rgba(255, 255, 255, 0.8);
+	font-size: 20px;
+	cursor: pointer;
+	padding: 4px 8px;
+	line-height: 1;
+}
+
+.arcamax-notice-close:hover {
+	color: #fff;
+}
+
+@keyframes slideDown {
+	from { transform: translateY(-100%); }
+	to { transform: translateY(0); }
+}
+
 /* Copyright Footer */
 .copyright-footer {
 	position: fixed;
