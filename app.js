@@ -2,10 +2,30 @@
 
 // Service Worker Registration
 if ('serviceWorker' in navigator) {
+	let _refreshingFromUpdate = false;
+
+	// When the new SW takes control, reload once so the fresh assets load.
+	navigator.serviceWorker.addEventListener('controllerchange', () => {
+		if (_refreshingFromUpdate) return;
+		_refreshingFromUpdate = true;
+		window.location.reload();
+	});
+
 	window.addEventListener('load', () => {
 		navigator.serviceWorker.register('./sw.js', { scope: './' })
-			.then(reg => console.log('SW registered'))
-			.catch(err => console.log('SW registration failed'));
+			.then(registration => {
+				registration.addEventListener('updatefound', () => {
+					const newWorker = registration.installing;
+					newWorker?.addEventListener('statechange', () => {
+						// A new version is installed and an old one is still controlling
+						// the page — prompt the user to update.
+						if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+							showUpdateNotification(newWorker);
+						}
+					});
+				});
+			})
+			.catch(() => console.log('SW registration failed'));
 	});
 }
 
@@ -20,6 +40,10 @@ let deferredPrompt = null;
 const START_DATE = new Date('2013-05-06');
 const GO_COMICS_BASE_URL = 'https://www.gocomics.com/aunty-acid';
 const CORS_PROXY = 'https://corsproxy.garfieldapp.workers.dev/cors-proxy?';
+
+// Network timeouts so a slow/stalled upstream can't hang the request forever
+const PAGE_FETCH_TIMEOUT = 15000;
+const IMAGE_FETCH_TIMEOUT = 20000;
 
 function getStoredJson(key, fallbackValue) {
 	try {
@@ -43,13 +67,13 @@ async function fetchComicPageHtml(comicDate) {
 	const comicPageUrl = buildComicPageUrl(comicDate);
 
 	try {
-		const response = await fetch(comicPageUrl);
+		const response = await fetch(comicPageUrl, { signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT) });
 		if (!response.ok) {
 			throw new Error(`Direct fetch failed (${response.status})`);
 		}
 		return { text: await response.text(), usedProxy: false };
 	} catch (directError) {
-		const proxyResponse = await fetch(buildProxyUrl(comicPageUrl));
+		const proxyResponse = await fetch(buildProxyUrl(comicPageUrl), { signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT) });
 		if (!proxyResponse.ok) {
 			throw new Error(`Proxy fetch failed (${proxyResponse.status}) after ${directError.message}`);
 		}
@@ -58,7 +82,7 @@ async function fetchComicPageHtml(comicDate) {
 }
 
 async function fetchShareImageBlob(imageUrl) {
-	const response = await fetch(`${CORS_PROXY}${encodeURIComponent(imageUrl)}`);
+	const response = await fetch(`${CORS_PROXY}${encodeURIComponent(imageUrl)}`, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT) });
 	if (!response.ok) {
 		throw new Error(`Proxy image fetch failed (${response.status})`);
 	}
@@ -66,10 +90,25 @@ async function fetchShareImageBlob(imageUrl) {
 }
 
 /**
+ * Check if the connection is fast enough to justify prefetching adjacent comics.
+ * Uses the Network Information API where available; defaults to true otherwise.
+ * @returns {boolean}
+ */
+function shouldPrefetch() {
+	const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+	if (!connection) return true;
+	if (connection.saveData) return false;
+	if (connection.effectiveType && /(^|-)2g$|slow-2g/.test(connection.effectiveType)) return false;
+	return true;
+}
+
+/**
  * Preload adjacent comic images for faster navigation
  * @param {Date} currentDate - Current comic date
  */
 function preloadAdjacentComics(currentDate) {
+	if (!shouldPrefetch()) return;
+
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
 	
@@ -88,6 +127,7 @@ function preloadAdjacentComics(currentDate) {
 				const imageUrl = extractComicImageUrl(text);
 				if (imageUrl) {
 					const img = new Image();
+					img.decoding = 'async';
 					img.src = imageUrl;
 				}
 			})
@@ -111,6 +151,7 @@ function preloadAdjacentComics(currentDate) {
 				const imageUrl = extractComicImageUrl(text);
 				if (imageUrl) {
 					const img = new Image();
+					img.decoding = 'async';
 					img.src = imageUrl;
 				}
 			})
@@ -215,6 +256,33 @@ function showNotification(message, duration = 3000) {
 function hideNotification() {
 	const toast = $('notificationToast');
 	toast.classList.remove('show');
+}
+
+/**
+ * Prompt the user to activate a freshly installed service worker version.
+ * Tapping the toast tells the waiting worker to skipWaiting; the
+ * controllerchange listener then reloads the page with the new assets.
+ * @param {ServiceWorker} worker - The installed (waiting) service worker
+ */
+function showUpdateNotification(worker) {
+	const toast = $('notificationToast');
+	if (!toast || !worker) return;
+
+	const content = toast.querySelector('.notification-content');
+	if (content) content.textContent = 'New version available — tap to update';
+	toast.classList.add('show');
+	toast.classList.add('notification-actionable');
+
+	const applyUpdate = () => {
+		toast.removeEventListener('click', onClick);
+		worker.postMessage({ type: 'SKIP_WAITING' });
+	};
+	const onClick = (event) => {
+		// Ignore clicks on the dedicated close button
+		if (event.target.closest('.notification-close')) return;
+		applyUpdate();
+	};
+	toast.addEventListener('click', onClick);
 }
 
 // Settings Panel
@@ -1292,6 +1360,20 @@ document.addEventListener('DOMContentLoaded', () => {
 	// Hide install button if app is already installed (including Microsoft Store PWA)
 	if (isAppInstalled()) {
 		hideInstallButton();
+	}
+
+	// Show the service worker / cache version in settings (aids debugging stale caches)
+	const swDisplay = $('swVersionDisplay');
+	if (swDisplay) {
+		fetch('./sw.js', { cache: 'no-store' })
+			.then(res => res.text())
+			.then(text => {
+				const match = text.match(/const\s+CACHE_NAME\s*=\s*['"]([^'"]+)['"]/);
+				swDisplay.textContent = match ? `Version: ${match[1]}` : 'Version: Unknown';
+			})
+			.catch(() => {
+				swDisplay.textContent = 'Version: Check failed';
+			});
 	}
 	
 	// Checkbox handlers

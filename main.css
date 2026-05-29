@@ -9,6 +9,13 @@
 	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.3);
 	--transition-fast: 0.15s ease;
 	--transition-normal: 0.3s ease;
+	/* Modern glassmorphic surfaces (pill toolbars / circular buttons) */
+	--accent: #9b59b6;
+	--surface: rgba(255, 255, 255, 0.72);
+	--surface-strong: rgba(255, 255, 255, 0.9);
+	--surface-border: rgba(155, 89, 182, 0.18);
+	--control-surface: rgba(255, 255, 255, 0.82);
+	--focus-ring: 0 0 0 3px rgba(155, 89, 182, 0.4);
 }
 
 html {
@@ -154,20 +161,18 @@ input[type="date"] {
 	justify-content: center;
 	align-items: center;
 	gap: 8px;
-	padding: 12px 16px;
-	background: var(--primary-gradient);
-	border-radius: 20px;
-	box-shadow: 0 8px 32px rgba(155, 89, 182, 0.3),
-				0 4px 12px rgba(0, 0, 0, 0.2),
-				inset 0 1px 0 rgba(255, 255, 255, 0.4);
+	padding: 8px 12px;
+	background: var(--surface);
+	border-radius: 999px;
+	box-shadow: var(--shadow-md);
 	z-index: 1000;
 	top: 100px;
 	left: 50%;
 	transform: translateX(-50%);
 	cursor: grab;
-	border: 2px solid rgba(255, 255, 255, 0.3);
-	-webkit-backdrop-filter: blur(20px);
-	backdrop-filter: blur(20px);
+	border: 1px solid var(--surface-border);
+	-webkit-backdrop-filter: blur(16px) saturate(1.1);
+	backdrop-filter: blur(16px) saturate(1.1);
 	box-sizing: border-box;
 }
 
@@ -176,81 +181,65 @@ input[type="date"] {
 }
 
 .toolbar-button {
-	background: var(--button-gradient);
-	background-size: 200% auto;
-	border: 1px solid rgba(155, 89, 182, 0.3);
-	border-radius: 16px;
-	width: 56px;
-	height: 56px;
-	min-width: 56px;
+	background: rgba(255, 255, 255, 0.78);
+	border: 1px solid var(--surface-border);
+	border-radius: 50%;
+	width: 48px;
+	height: 48px;
+	min-width: 48px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	cursor: pointer;
-	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-	box-shadow: 0 4px 16px rgba(155, 89, 182, 0.2),
-				0 2px 4px rgba(0, 0, 0, 0.1),
-				inset 0 1px 0 rgba(255, 255, 255, 0.5);
+	transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), border-color var(--transition-fast);
+	box-shadow: 0 1px 4px rgba(155, 89, 182, 0.12);
 	position: relative;
 	overflow: hidden;
-	will-change: transform, background-position;
+	will-change: transform;
 	flex-shrink: 0;
 }
 
 .toolbar-button::before {
-	content: '';
-	position: absolute;
-	top: 0;
-	left: -100%;
-	width: 100%;
-	height: 100%;
-	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-	transition: left 0.6s ease;
-	z-index: 0;
+	content: none;
 }
 
 .toolbar-button:hover::before {
-	left: 100%;
+	left: auto;
 }
 
 .toolbar-button:hover {
-	transform: translateY(-3px) scale(1.05);
-	background-position: right center;
-	box-shadow: 0 8px 24px rgba(155, 89, 182, 0.4),
-				0 4px 8px rgba(0, 0, 0, 0.2),
-				inset 0 1px 0 rgba(255, 255, 255, 0.5);
-	border: 1px solid rgba(255, 255, 255, 0.4);
+	transform: translateY(-1px);
+	background: #fff;
+	box-shadow: 0 4px 12px rgba(155, 89, 182, 0.2);
+	border-color: rgba(155, 89, 182, 0.32);
 }
 
 .toolbar-button:active {
-	transform: translateY(-1px) scale(1.02);
-	box-shadow: 0 4px 12px rgba(155, 89, 182, 0.3),
-				0 2px 4px rgba(0, 0, 0, 0.15),
-				inset 0 2px 4px rgba(0, 0, 0, 0.1);
-	background-position: right center;
+	transform: translateY(0);
+	box-shadow: inset 0 2px 4px rgba(155, 89, 182, 0.16);
+	background: #fbeefb;
 }
 
 .toolbar-button:focus-visible {
 	outline: none;
-	box-shadow: 0 0 0 3px rgba(155, 89, 182, 0.4);
-	transform: translateY(-2px) scale(1.03);
+	box-shadow: var(--focus-ring);
+	transform: none;
 }
 
 .toolbar-button:disabled {
 	opacity: 0.4;
 	cursor: not-allowed;
 	transform: none;
-	background: linear-gradient(45deg, #ddd 0%, #bbb 51%, #ddd 100%);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1),
-				inset 0 1px 0 rgba(255, 255, 255, 0.2);
-	border: 1px solid rgba(155, 89, 182, 0.2);
+	background: rgba(255, 255, 255, 0.42);
+	box-shadow: none;
+	border: 1px solid rgba(155, 89, 182, 0.1);
 }
 
 .toolbar-button:disabled:hover {
 	transform: none;
-	background-position: left center;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1),
-				inset 0 1px 0 rgba(255, 255, 255, 0.2);
+	background: rgba(255, 255, 255, 0.42);
+	box-shadow: none;
+	border: 1px solid rgba(155, 89, 182, 0.1);
 }
 
 .toolbar-button:disabled::before {
@@ -258,9 +247,8 @@ input[type="date"] {
 }
 
 .toolbar-svg {
-	width: 28px;
-	height: 28px;
-	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+	width: 22px;
+	height: 22px;
 	color: purple;
 	stroke: purple;
 	fill: none;
@@ -428,29 +416,37 @@ input[type="date"] {
 	display: flex;
 	justify-content: center;
 	align-items: center;
-	gap: 12px;
+	gap: 10px;
+	padding: 6px 8px;
+	width: fit-content;
+	margin: 0 auto;
+	background: var(--surface);
+	border: 1px solid var(--surface-border);
+	border-radius: 999px;
+	box-shadow: var(--shadow-sm);
+	-webkit-backdrop-filter: blur(12px) saturate(1.1);
+	backdrop-filter: blur(12px) saturate(1.1);
 }
 
 .icon-button {
-	background: var(--primary-gradient);
-	background-size: 200% auto;
-	border: 1px solid rgba(255, 255, 255, 0.3);
+	background: rgba(255, 255, 255, 0.78);
+	border: 1px solid var(--surface-border);
 	border-radius: 50%;
-	width: 48px;
-	height: 48px;
+	width: 44px;
+	height: 44px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	cursor: pointer;
-	transition: var(--transition-fast);
-	box-shadow: var(--shadow-sm);
+	transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), border-color var(--transition-fast);
+	box-shadow: 0 1px 4px rgba(155, 89, 182, 0.1);
 	position: relative;
 	overflow: hidden;
 }
 
 .icon-button svg {
-	width: 24px;
-	height: 24px;
+	width: 22px;
+	height: 22px;
 	stroke: purple;
 	color: purple;
 }
@@ -464,21 +460,23 @@ input[type="date"] {
 }
 
 .icon-button:hover {
-	transform: translateY(-3px) scale(1.08);
-	background-position: right center;
-	box-shadow: 0 8px 20px rgba(155, 89, 182, 0.4);
+	transform: translateY(-1px);
+	background: #fff;
+	box-shadow: 0 4px 12px rgba(155, 89, 182, 0.2);
+	border-color: rgba(155, 89, 182, 0.32);
 }
 
 .icon-button:active {
-	transform: translateY(-1px) scale(1.03);
+	transform: translateY(0);
+	box-shadow: inset 0 2px 4px rgba(155, 89, 182, 0.16);
 }
 
 .icon-button:focus-visible,
 .backup-button:focus-visible,
 .settings-close:focus-visible,
 .button:focus-visible {
-	outline: 3px solid rgba(155, 89, 182, 0.45);
-	outline-offset: 3px;
+	outline: none;
+	box-shadow: var(--focus-ring);
 }
 
 /* Install Button */
@@ -614,6 +612,12 @@ input[type="date"] {
 	background: rgba(255, 192, 203, 0.15);
 }
 
+.setting-version {
+	justify-content: center;
+	font-size: 12px;
+	opacity: 0.6;
+}
+
 .backup-button {
 	display: flex;
 	align-items: center;
@@ -688,6 +692,10 @@ input[type="date"] {
 	transform: translateX(-50%) translateY(0);
 	opacity: 1;
 	pointer-events: auto;
+}
+
+.notification-toast.notification-actionable {
+	cursor: pointer;
 }
 
 .notification-icon {
@@ -812,18 +820,18 @@ input[type="date"] {
 	.toolbar {
 		width: calc(100vw - 20px);
 		max-width: calc(100vw - 20px);
-		padding: 12px 10px;
+		padding: 7px 8px;
 		gap: 6px;
-		border-radius: 16px;
+		border-radius: 999px;
 		left: 10px;
 		transform: none;
 	}
 	
 	.toolbar-button {
-		width: 50px;
-		height: 50px;
-		min-width: 50px;
-		border-radius: 14px;
+		width: 46px;
+		height: 46px;
+		min-width: 46px;
+		border-radius: 50%;
 		-webkit-tap-highlight-color: transparent;
 		-webkit-touch-callout: none;
 		-webkit-user-select: none;
@@ -831,8 +839,8 @@ input[type="date"] {
 	}
 	
 	.toolbar-svg {
-		width: 26px;
-		height: 26px;
+		width: 22px;
+		height: 22px;
 	}
 	
 	.button {
@@ -847,7 +855,7 @@ input[type="date"] {
 	
 	.settings-icons-container {
 		justify-content: center;
-		width: 100%;
+		width: fit-content;
 	}
 	
 	.settings-panel {
@@ -873,21 +881,21 @@ input[type="date"] {
 	.toolbar {
 		width: calc(100vw - 16px);
 		max-width: calc(100vw - 16px);
-		padding: 10px 8px;
+		padding: 6px 6px;
 		gap: 4px;
 		left: 8px;
 	}
 	
 	.toolbar-button {
-		width: 46px;
-		height: 46px;
-		min-width: 46px;
-		border-radius: 12px;
+		width: 44px;
+		height: 44px;
+		min-width: 44px;
+		border-radius: 50%;
 	}
 	
 	.toolbar-svg {
-		width: 24px;
-		height: 24px;
+		width: 20px;
+		height: 20px;
 	}
 	
 	.button {

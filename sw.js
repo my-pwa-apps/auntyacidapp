@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auntyacid-v46';
+const CACHE_NAME = 'auntyacid-v48';
 
 // Assets to cache on install (use ./ relative paths like GarfieldApp/DirkJanApp)
 const PRECACHE_ASSETS = [
@@ -14,15 +14,38 @@ const PRECACHE_ASSETS = [
   './manifest-icon-512.maskable.png'
 ];
 
+// Assets that MUST cache successfully for the install to succeed.
+// Optional assets (icons, logo) that 404 won't abort the whole install.
+const REQUIRED_PRECACHE_ASSETS = new Set([
+  './',
+  './index.html',
+  './app.js',
+  './main.css'
+]);
+
 // Cache size limits
 const MAX_RUNTIME_CACHE_SIZE = 30;
 const MAX_IMAGE_CACHE_SIZE = 50;
+
+// Precache a single asset, bypassing the browser HTTP cache so fresh deploys
+// don't get stale bytes. Non-required assets that fail are skipped instead of
+// aborting the entire install (matches GarfieldApp resilient precache).
+async function precacheAsset(cache, asset) {
+  try {
+    await cache.add(new Request(asset, { cache: 'reload' }));
+  } catch (error) {
+    console.error(`Failed to precache ${asset}`, error);
+    if (REQUIRED_PRECACHE_ASSETS.has(asset)) {
+      throw error;
+    }
+  }
+}
 
 // Install event - cache core assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE_ASSETS))
+      .then(cache => Promise.all(PRECACHE_ASSETS.map(asset => precacheAsset(cache, asset))))
       .then(() => self.skipWaiting())
   );
 });
