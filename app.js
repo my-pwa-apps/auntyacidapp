@@ -39,7 +39,8 @@ let deferredPrompt = null;
 
 const START_DATE = new Date('2013-05-06');
 const GO_COMICS_BASE_URL = 'https://www.gocomics.com/aunty-acid';
-const CORS_PROXY = 'https://corsproxy.garfieldapp.workers.dev/cors-proxy?';
+// Dedicated Aunty Acid proxy (source in ./worker, deploy with `npx wrangler deploy`)
+const CORS_PROXY = 'https://auntyacid-corsproxy.garfieldapp.workers.dev/?';
 
 // Network timeouts so a slow/stalled upstream can't hang the request forever
 const PAGE_FETCH_TIMEOUT = 15000;
@@ -60,7 +61,7 @@ function buildComicPageUrl(comicDate) {
 }
 
 function buildProxyUrl(url) {
-	return `${CORS_PROXY}${url}`;
+	return `${CORS_PROXY}${encodeURIComponent(url)}`;
 }
 
 async function fetchComicPageHtml(comicDate) {

@@ -1,0 +1,14 @@
+{
+  "name": "auntyacid-corsproxy",
+  "account_id": "bb3893fab785508c512caa687c340bda",
+  "main": "index.js",
+  "compatibility_date": "2026-09-15",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_HOSTS": "gocomics.com,*.gocomics.com,assets.amuniversal.com,www.arcamax.com,resources.arcamax.com"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

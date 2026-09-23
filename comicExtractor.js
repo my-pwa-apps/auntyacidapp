@@ -4,7 +4,7 @@
  */
 
 const CORS_PROXIES = [
-    'https://corsproxy.garfieldapp.workers.dev/?',
+    'https://auntyacid-corsproxy.garfieldapp.workers.dev/?',
     'https://api.codetabs.com/v1/proxy?quest=',
     'https://api.allorigins.win/raw?url='
 ];

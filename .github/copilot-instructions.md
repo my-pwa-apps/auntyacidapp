@@ -11,6 +11,7 @@ A Progressive Web App for browsing Aunty Acid comic strips from GoComics. Part o
 - `main.css` - Pink/purple themed styles with CSS custom properties (~820 lines)
 - `sw.js` - Service worker with stale-while-revalidate caching + navigation fallback
 - `manifest.webmanifest` - PWA manifest (uses relative paths `./` for cross-platform compatibility)
+- `worker/` - Dedicated Cloudflare Worker CORS proxy (`auntyacid-corsproxy`); origin + host allowlists live in `worker/index.js`
 
 ### Comic Data Flow
 1. User navigates (buttons/swipe/date picker)
@@ -22,7 +23,7 @@ A Progressive Web App for browsing Aunty Acid comic strips from GoComics. Part o
 ### Key Constants
 ```javascript
 const START_DATE = new Date('2013-05-06');  // First Aunty Acid comic
-const CORS_PROXY = 'https://corsproxy.garfieldapp.workers.dev/cors-proxy?';
+const CORS_PROXY = 'https://auntyacid-corsproxy.garfieldapp.workers.dev/?';  // Dedicated worker, source in worker/
 ```
 
 ## Code Patterns
@@ -96,6 +97,7 @@ Use relative paths (`./`) for all URLs to ensure cross-platform compatibility (A
 ## Deployment
 - Push to main branch triggers auto-deploy
 - No build step required (static files)
+- Proxy worker is deployed separately: `cd worker; npx wrangler deploy`
 
 ## Related Projects
 Reference `https://github.com/my-pwa-apps/GarfieldApp` for shared patterns
