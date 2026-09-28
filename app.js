@@ -66,20 +66,12 @@ function buildProxyUrl(url) {
 
 async function fetchComicPageHtml(comicDate) {
 	const comicPageUrl = buildComicPageUrl(comicDate);
-
-	try {
-		const response = await fetch(comicPageUrl, { signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT) });
-		if (!response.ok) {
-			throw new Error(`Direct fetch failed (${response.status})`);
-		}
-		return { text: await response.text(), usedProxy: false };
-	} catch (directError) {
-		const proxyResponse = await fetch(buildProxyUrl(comicPageUrl), { signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT) });
-		if (!proxyResponse.ok) {
-			throw new Error(`Proxy fetch failed (${proxyResponse.status}) after ${directError.message}`);
-		}
-		return { text: await proxyResponse.text(), usedProxy: true };
+	// GoComics does not allow cross-origin page fetches; always use the dedicated proxy.
+	const response = await fetch(buildProxyUrl(comicPageUrl), { signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT) });
+	if (!response.ok) {
+		throw new Error(`Proxy fetch failed (${response.status})`);
 	}
+	return { text: await response.text(), usedProxy: true };
 }
 
 async function fetchShareImageBlob(imageUrl) {
