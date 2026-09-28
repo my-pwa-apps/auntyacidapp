@@ -34,7 +34,7 @@ let currentselectedDate, formattedComicDate, formattedDate;
 let year, month, day;
 let pictureUrl = '';
 let previousUrl = '';
-let previousclicked = false;
+let comicLoadSequence = 0;
 let deferredPrompt = null;
 
 const START_DATE = new Date('2013-05-06');
@@ -160,24 +160,23 @@ function preloadAdjacentComics(currentDate) {
  * @returns {string|null} Image URL or null
  */
 function extractComicImageUrl(text) {
-	// Try featureassets CDN (current GoComics CDN)
-	let match = text.match(/https:\/\/featureassets\.gocomics\.com\/assets\/[a-f0-9]+/);
-	if (match) return match[0];
-	
-	// Try amuniversal CDN (legacy)
-	match = text.match(/https:\/\/assets\.amuniversal\.com\/[a-f0-9]+/);
-	if (match) return match[0];
-	
-	// Try og:image meta tag
-	match = text.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
-	if (match && match[1] && (match[1].includes('gocomics') || match[1].includes('amuniversal'))) {
-		return match[1];
+	if (typeof text !== 'string') return null;
+	// Generic CDN matches can be site-wide recommendations, not the requested strip.
+	for (const tag of text.match(/<meta\b[^>]*>/gi) || []) {
+		if (!/(?:property|name)\s*=\s*(["'])og:image\1/i.test(tag)) continue;
+		const content = tag.match(/\bcontent\s*=\s*(["'])(.*?)\1/i);
+		if (!content) continue;
+		const url = content[2].trim().replace(/&amp;/gi, '&');
+		try {
+			const parsed = new URL(url);
+			if (parsed.protocol === 'https:' &&
+				['featureassets.gocomics.com', 'assets.amuniversal.com'].includes(parsed.hostname)) {
+				return url;
+			}
+		} catch {
+			// Ignore malformed metadata and try the next og:image tag.
+		}
 	}
-	
-	// Fallback to picture tag
-	match = text.match(/<picture[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<\/picture>/i);
-	if (match && match[1]) return match[1];
-	
 	return null;
 }
 
@@ -185,12 +184,16 @@ function extractComicImageUrl(text) {
 let _arcamaxModule = null;
 let _usingArcamaxFallback = false;
 
-async function fetchFromArcamax() {
+async function fetchFromArcamax(requestedDate) {
 	if (!_arcamaxModule) {
 		_arcamaxModule = await import('./comicExtractor.js');
 	}
 	const result = await _arcamaxModule.getAuthenticatedComic('latest');
-	if (result.success && result.imageUrl) {
+	const stripDate = result.stripDate;
+	if (result.success && result.imageUrl && stripDate &&
+		stripDate.getFullYear() === requestedDate.getFullYear() &&
+		stripDate.getMonth() === requestedDate.getMonth() &&
+		stripDate.getDate() === requestedDate.getDate()) {
 		return result.imageUrl;
 	}
 	return null;
@@ -908,7 +911,6 @@ function PreviousClick() {
 	} else {
 		currentselectedDate.setDate(currentselectedDate.getDate() - 1);
 	}
-	previousclicked = true;
 	CompareDates();
 	showComic('previous'); // Filmstrip slide animation
 }
@@ -968,9 +970,12 @@ function DateChange() {
 // Display comic with animation
 // direction: 'next', 'previous' for filmstrip slide; 'morph' for blur effect; null for no animation
 function showComic(direction = null) {
+	const sequence = ++comicLoadSequence;
+	const requestedDate = new Date(currentselectedDate);
 	formatDate(currentselectedDate);
 	formattedDate = `${year}-${month}-${day}`;
 	formattedComicDate = `${year}/${month}/${day}`;
+	const requestedYmd = formattedComicDate;
 	$('DatePicker').value = formattedDate;
 	
 	localStorage.setItem('lastcomic', currentselectedDate);
@@ -978,17 +983,19 @@ function showComic(direction = null) {
 	fetchComicPageHtml(formattedComicDate)
 		.then(({ text }) => text)
 		.then(text => {
+			if (sequence !== comicLoadSequence) return null;
 			// Extract comic image URL using the reusable function
 			const imageUrl = extractComicImageUrl(text);
 			
 			if (!imageUrl) {
 				// GoComics returned a page but no image — try ArcaMax fallback
-				return fetchFromArcamax().then(arcamaxUrl => {
+				return fetchFromArcamax(requestedDate).then(arcamaxUrl => {
+					if (sequence !== comicLoadSequence) return null;
 					if (arcamaxUrl) {
 						showArcamaxFallbackNotice();
 						return arcamaxUrl;
 					}
-					showNotification('Could not load comic for this date');
+					showComicLoadFailure(requestedYmd);
 					return null;
 				});
 			}
@@ -998,6 +1005,7 @@ function showComic(direction = null) {
 			return imageUrl;
 		})
 		.then(imageUrl => {
+			if (sequence !== comicLoadSequence) return;
 			if (!imageUrl) return;
 			
 			pictureUrl = imageUrl;
@@ -1094,11 +1102,7 @@ function showComic(direction = null) {
 					// First load or no animation - just set source
 					comicImg.src = pictureUrl;
 				}
-			} else if (previousclicked) {
-				PreviousClick();
 			}
-			
-			previousclicked = false;
 			previousUrl = pictureUrl;
 			
 			// Update favorite icon based on current comic
@@ -1122,9 +1126,11 @@ function showComic(direction = null) {
 			}
 		})
 		.catch(error => {
-			console.warn('GoComics fetch failed, trying ArcaMax fallback...', formattedComicDate, error);
+			if (sequence !== comicLoadSequence) return;
+			console.warn('GoComics fetch failed, trying ArcaMax fallback...', requestedYmd, error);
 			// GoComics completely failed — try ArcaMax as backup source
-			fetchFromArcamax().then(arcamaxUrl => {
+			fetchFromArcamax(requestedDate).then(arcamaxUrl => {
+				if (sequence !== comicLoadSequence) return;
 				if (arcamaxUrl) {
 					showArcamaxFallbackNotice();
 					pictureUrl = arcamaxUrl;
@@ -1145,12 +1151,21 @@ function showComic(direction = null) {
 						}, { once: true });
 					}
 				} else {
-					showNotification('Could not load comic. Please try again.');
+					showComicLoadFailure(requestedYmd);
 				}
-			}).catch(() => {
-				showNotification('Could not load comic. Please try again.');
+			}).catch(fallbackError => {
+				if (sequence !== comicLoadSequence) return;
+				console.warn('ArcaMax fallback failed', requestedYmd, fallbackError);
+				showComicLoadFailure(requestedYmd);
 			});
 		});
+}
+
+function showComicLoadFailure(requestedYmd) {
+	pictureUrl = previousUrl = '';
+	$('comic').removeAttribute('src');
+	hideArcamaxFallbackNotice();
+	showNotification(`Could not load the comic for ${requestedYmd}. Please try again.`);
 }
 
 // Date comparison and button state management
@@ -1215,7 +1230,6 @@ function handleUrlParams() {
 
 // Initialize App
 function initApp() {
-	previousclicked = false;
 	previousUrl = '';
 	
 	const favs = getFavs();
