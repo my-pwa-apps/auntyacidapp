@@ -625,6 +625,51 @@ function positionToolbarCentered(toolbar, savePosition = false) {
 	}
 }
 
+function fitComicToViewport() {
+	const comic = $('comic');
+	const wrapper = $('comic-wrapper');
+	const toolbar = $('mainToolbar');
+	if (!comic || !wrapper || !toolbar) return;
+
+	document.documentElement.style.setProperty('--toolbar-space', `${toolbar.offsetHeight + 20}px`);
+	if (!comic.naturalWidth || !comic.naturalHeight) return;
+
+	const footer = document.querySelector('.copyright-footer');
+	const main = document.querySelector('main');
+	const container = $('comic-container');
+	const controls = $('controls-container');
+	const viewport = window.visualViewport;
+	const viewportHeight = viewport?.scale === 1 ? viewport.height : window.innerHeight;
+	const bottomPadding = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
+	const bottomReserve = Math.max(bottomPadding, (footer?.offsetHeight || 0) + 8);
+	const contentPadding = (parseFloat(getComputedStyle(main).paddingBottom) || 0) +
+		(parseFloat(getComputedStyle(container).paddingBottom) || 0);
+	const top = wrapper.getBoundingClientRect().top + window.scrollY;
+	// Keep a visible strip in exceptionally short windows; scrolling remains available.
+	const availableHeight = Math.max(80, Math.floor(viewportHeight - top - contentPadding -
+		(controls?.getBoundingClientRect().height || 0) - bottomReserve));
+	wrapper.style.maxWidth = `${Math.min(900, availableHeight * comic.naturalWidth / comic.naturalHeight)}px`;
+	clampToolbarInView();
+}
+
+function initializeComicSizing() {
+	let frame;
+	const scheduleFit = () => {
+		cancelAnimationFrame(frame);
+		frame = requestAnimationFrame(fitComicToViewport);
+	};
+	$('comic')?.addEventListener('load', scheduleFit);
+	window.addEventListener('resize', scheduleFit);
+	window.visualViewport?.addEventListener('resize', scheduleFit);
+	if (typeof ResizeObserver !== 'undefined') {
+		const observer = new ResizeObserver(scheduleFit);
+		for (const element of [document.querySelector('.app-header'), $('mainToolbar'), $('controls-container'), document.querySelector('.copyright-footer')]) {
+			if (element) observer.observe(element);
+		}
+	}
+	scheduleFit();
+}
+
 function initializeToolbar() {
 	const toolbar = $('mainToolbar');
 	if (!toolbar) return;
@@ -1465,6 +1510,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	
 	// Initialize toolbar
 	initializeToolbar();
+	initializeComicSizing();
 	
 	// Icon buttons
 	$('settingsBtn')?.addEventListener('click', toggleSettings);

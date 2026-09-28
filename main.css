@@ -307,7 +307,7 @@ input[type="date"] {
 	justify-content: center;
 	align-items: center;
 	width: 100%;
-	margin: 0 auto;
+	margin: var(--toolbar-space, 86px) auto 0;
 	padding: 10px 0;
 	box-sizing: border-box;
 }
@@ -811,12 +811,18 @@ input[type="date"] {
 	text-decoration: underline;
 }
 
+@media (max-height: 600px) {
+	.app-header {
+		padding: 8px 10px 4px;
+	}
+
+	.app-logo {
+		max-width: 160px;
+	}
+}
+
 /* Mobile Responsive */
 @media (max-width: 768px) {
-	#comic-container {
-		margin-top: 80px;
-	}
-	
 	.toolbar {
 		width: calc(100vw - 20px);
 		max-width: calc(100vw - 20px);
@@ -874,10 +880,6 @@ input[type="date"] {
 }
 
 @media (max-width: 480px) {
-	#comic-container {
-		margin-top: 70px;
-	}
-	
 	.toolbar {
 		width: calc(100vw - 16px);
 		max-width: calc(100vw - 16px);
@@ -911,4 +913,3 @@ input[type="date"] {
 		width: 40px;
 		height: 40px;
 	}
-

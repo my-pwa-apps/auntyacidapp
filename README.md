@@ -34,5 +34,14 @@ navigation also updates the date picker to that date. A next-day redirect
 back to the current/earlier date, or a 404, temporarily disables Next for one
 minute. Transient errors such as 403/timeouts do not disable it.
 
+## Responsive comic sizing
+
+Comics shrink proportionally to fit the available viewport height as well as
+width, reserving space for the logo, navigation, action buttons and footer.
+Short screens also use a smaller logo. Sizing updates when the image loads or
+the window/layout changes. Transitions
+use the same sized wrapper, and pinch zoom remains available. Exceptionally
+short windows retain an 80-pixel comic-height allowance and can still scroll.
+
 Run the regression tests with `node --test tests/*.test.js`.
 Bump `CACHE_NAME` in `sw.js` when changing cached app files before deploying.
