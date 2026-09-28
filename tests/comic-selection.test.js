@@ -10,6 +10,7 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const extraction = source.slice(source.indexOf('function extractComicImageUrl'), source.indexOf('// ArcaMax fallback'));
 const fallback = source.slice(source.indexOf('async function fetchFromArcamax'), source.indexOf('function showArcamaxFallbackNotice'));
 const display = source.slice(source.indexOf('function showComic(direction'), source.indexOf('// Date comparison and button state management'));
+const dateHelpers = source.slice(source.indexOf('function dateKey'), source.indexOf('function getComic'));
 const SITE_IMAGE = 'https://featureassets.gocomics.com/assets/f98fbb20ac400135fdb0005056a9545d';
 const JAN_5 = 'https://featureassets.gocomics.com/assets/7ffd84d07179013c2a81005056a9545d';
 const JAN_6 = 'https://featureassets.gocomics.com/assets/0123456789abcdef';
@@ -59,7 +60,8 @@ function displayContext(fetchComicPageHtml) {
 			complete: true,
 			removeAttribute(name) { if (name === 'src') this.src = ''; }
 		},
-		DatePicker: {}
+		DatePicker: {},
+		showfavs: { checked: false }
 	};
 	const notices = [];
 	const context = vm.createContext({
@@ -68,7 +70,13 @@ function displayContext(fetchComicPageHtml) {
 		comicLoadSequence: 0,
 		pictureUrl: JAN_6,
 		previousUrl: JAN_6,
-		fetchComicPageHtml,
+		START_DATE: new Date(2013, 4, 6),
+		cancelPreloads() {},
+		randomBrowsing: false,
+		getComic: async date => {
+			const { text } = await fetchComicPageHtml(date);
+			return { url: context.extractComicImageUrl(text), date: context.extractComicPageDate(text) || date };
+		},
 		fetchFromArcamax: async () => null,
 		$: id => nodes[id],
 		window: { location: { href: 'https://example.com/' } },
@@ -92,34 +100,13 @@ function displayContext(fetchComicPageHtml) {
 			day = String(date.getDate()).padStart(2, '0');
 		}
 		${extraction}
+		${dateHelpers}
 		${display}
 	`, context);
 	return { context, nodes, notices };
 }
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
-
-test('both adjacent-date preloads use the comic metadata, not the shared image', async () => {
-	const requests = [];
-	const images = [];
-	const context = vm.createContext({
-		URL,
-		START_DATE: new Date(2013, 4, 6),
-		shouldPrefetch: () => true,
-		fetchComicPageHtml: async date => {
-			requests.push(date);
-			return { text: page(date === '2024/01/04' ? JAN_5 : JAN_6) };
-		},
-		Image: class { set src(url) { images.push(url); } },
-		console
-	});
-	const preload = source.slice(source.indexOf('function preloadAdjacentComics'), source.indexOf('function extractComicImageUrl'));
-	vm.runInContext(`${extraction}\n${preload}`, context);
-	context.preloadAdjacentComics(new Date(2024, 0, 5));
-	await settle();
-	assert.deepEqual(requests, ['2024/01/04', '2024/01/06']);
-	assert.deepEqual(images, [JAN_5, JAN_6]);
-});
 
 test('display uses comic metadata and does not skip a date with a repeated strip', async () => {
 	const requests = [];
@@ -167,6 +154,7 @@ test('an old fallback cannot replace a later successful navigation', async () =>
 		if (date === '2024/01/05') throw new Error('HTTP 403');
 		return { text: page(JAN_6) };
 	});
+
 	context.fetchFromArcamax = () => new Promise(resolve => { finishFallback = resolve; });
 	context.showComic();
 	await settle();
@@ -177,4 +165,14 @@ test('an old fallback cannot replace a later successful navigation', async () =>
 	await settle();
 	assert.equal(nodes.comic.src, JAN_6);
 	assert.equal(nodes.DatePicker.value, '2024-01-06');
+});
+
+test('foreground redirects display and label the actual comic date', async () => {
+	const { context, nodes } = displayContext(async () => ({
+		text: page(JAN_5) + '<meta property="og:url" content="https://www.gocomics.com/aunty-acid/2024/01/04">'
+	}));
+	context.showComic();
+	await settle();
+	assert.equal(nodes.DatePicker.value, '2024-01-04');
+	assert.equal(nodes.comic.src, JAN_5);
 });

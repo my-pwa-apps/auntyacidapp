@@ -37,7 +37,7 @@ let previousUrl = '';
 let comicLoadSequence = 0;
 let deferredPrompt = null;
 
-const START_DATE = new Date('2013-05-06');
+const START_DATE = new Date(2013, 4, 6);
 const GO_COMICS_BASE_URL = 'https://www.gocomics.com/aunty-acid';
 // Dedicated Aunty Acid proxy (source in ./worker, deploy with `npx wrangler deploy`)
 const CORS_PROXY = 'https://auntyacid-corsproxy.garfieldapp.workers.dev/?';
@@ -45,6 +45,19 @@ const CORS_PROXY = 'https://auntyacid-corsproxy.garfieldapp.workers.dev/?';
 // Network timeouts so a slow/stalled upstream can't hang the request forever
 const PAGE_FETCH_TIMEOUT = 15000;
 const IMAGE_FETCH_TIMEOUT = 20000;
+const PREFETCH_ADJACENT_DAYS = 2;
+const PREFETCH_STAGGER_MS = 150;
+const PREFETCH_RANDOM_QUEUE_SIZE = 3;
+const COMIC_CACHE_LIMIT = 500;
+const FRESH_COMIC_TTL = 60000;
+const comicCache = new Map();
+const inflightComics = new Map();
+let preloadGeneration = 0;
+let preloadTimers = [];
+let randomQueue = [];
+let randomBrowsing = false;
+let unpublishedNext = null;
+let nextAvailabilityTimer = null;
 
 function getStoredJson(key, fallbackValue) {
 	try {
@@ -69,7 +82,7 @@ async function fetchComicPageHtml(comicDate) {
 	// GoComics does not allow cross-origin page fetches; always use the dedicated proxy.
 	const response = await fetch(buildProxyUrl(comicPageUrl), { signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT) });
 	if (!response.ok) {
-		throw new Error(`Proxy fetch failed (${response.status})`);
+		throw Object.assign(new Error(`Proxy fetch failed (${response.status})`), { status: response.status });
 	}
 	return { text: await response.text(), usedProxy: true };
 }
@@ -88,70 +101,160 @@ async function fetchShareImageBlob(imageUrl) {
  * @returns {boolean}
  */
 function shouldPrefetch() {
+	if (navigator.onLine === false) return false;
 	const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
 	if (!connection) return true;
 	if (connection.saveData) return false;
 	if (connection.effectiveType && /(^|-)2g$|slow-2g/.test(connection.effectiveType)) return false;
+	if (typeof connection.downlink === 'number' && connection.downlink < 0.5) return false;
 	return true;
 }
 
-/**
- * Preload adjacent comic images for faster navigation
- * @param {Date} currentDate - Current comic date
- */
+function dateKey(date) {
+	return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function dateFromKey(key) {
+	if (typeof key !== 'string' || !/^\d{4}[-/]\d{2}[-/]\d{2}$/.test(key)) return null;
+	const [year, month, day] = key.split(/[-/]/).map(Number);
+	const date = new Date(year, month - 1, day);
+	return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
+}
+
+function extractComicPageDate(text) {
+	const candidates = [];
+	for (const tag of text.match(/<(?:meta|link)\b[^>]*>/gi) || []) {
+		const isMeta = /(?:property|name)\s*=\s*(["'])og:url\1/i.test(tag);
+		const isCanonical = /\brel\s*=\s*(["'])canonical\1/i.test(tag);
+		if (!isMeta && !isCanonical) continue;
+		const attribute = isMeta ? /\bcontent\s*=\s*(["'])(.*?)\1/i : /\bhref\s*=\s*(["'])(.*?)\1/i;
+		const value = tag.match(attribute)?.[2];
+		if (isMeta) candidates.unshift(value);
+		else candidates.push(value);
+	}
+	for (const url of candidates) {
+		const key = url?.match(/^https:\/\/(?:www\.)?gocomics\.com\/aunty-acid\/(\d{4}\/\d{2}\/\d{2})(?:[/?#]|$)/)?.[1];
+		if (dateFromKey(key)) return key;
+	}
+	return null;
+}
+
+function getComic(key) {
+	const cached = comicCache.get(key);
+	if (cached && Date.now() < cached.expires) return Promise.resolve(cached.comic);
+	comicCache.delete(key);
+	if (inflightComics.has(key)) return inflightComics.get(key);
+	const lookup = fetchComicPageHtml(key).then(({ text }) => {
+		const comic = { url: extractComicImageUrl(text), date: extractComicPageDate(text) || key };
+		if (comic.url) {
+			// Redirected days are never cached under the requested date.
+			const expires = comic.date >= dateKey(new Date()) ? Date.now() + FRESH_COMIC_TTL : Infinity;
+			comicCache.delete(comic.date);
+			comicCache.set(comic.date, { comic, expires });
+			while (comicCache.size > COMIC_CACHE_LIMIT) comicCache.delete(comicCache.keys().next().value);
+		}
+		return comic;
+	}).finally(() => inflightComics.delete(key));
+	inflightComics.set(key, lookup);
+	return lookup;
+}
+
+function cancelPreloads() {
+	preloadGeneration++;
+	preloadTimers.forEach(clearTimeout);
+	preloadTimers = [];
+	clearTimeout(nextAvailabilityTimer);
+	unpublishedNext = null;
+}
+
+function prefetchContext() {
+	return $('showfavs').checked ? [...getFavs()].sort().join(',') : 'all';
+}
+
+function markNextUnavailable(from, generation) {
+	if (generation !== preloadGeneration || dateKey(currentselectedDate) !== from || $('showfavs').checked) return;
+	unpublishedNext = from;
+	CompareDates();
+	clearTimeout(nextAvailabilityTimer);
+	nextAvailabilityTimer = setTimeout(() => {
+		unpublishedNext = null;
+		CompareDates();
+	}, FRESH_COMIC_TTL);
+}
+
+function warmComicImage(url) {
+	const image = new Image();
+	image.decoding = 'async';
+	image.loading = 'eager';
+	image.src = url;
+}
+
+function pickRandomDate(excluded = new Set()) {
+	const today = dateKey(new Date());
+	if ($('showfavs').checked) {
+		const pool = getFavs().filter(key => dateFromKey(key) && key >= dateKey(START_DATE) && key <= today && !excluded.has(key));
+		return pool.length ? dateFromKey(pool[Math.floor(Math.random() * pool.length)]) : null;
+	}
+	for (let attempt = 0; attempt < 20; attempt++) {
+		const date = new Date(START_DATE.getTime() + Math.random() * (Date.now() - START_DATE.getTime()));
+		if (!excluded.has(dateKey(date))) return dateFromKey(dateKey(date));
+	}
+	return null;
+}
+
 function preloadAdjacentComics(currentDate) {
 	if (!shouldPrefetch()) return;
+	const generation = preloadGeneration;
+	const context = prefetchContext();
+	const currentKey = dateKey(currentDate);
+	const stillCurrent = () => generation === preloadGeneration && context === prefetchContext() && shouldPrefetch();
+	const tasks = [];
 
-	const today = new Date();
-	today.setHours(0, 0, 0, 0);
-	
-	// Preload previous comic (if not before start date)
-	const prevDate = new Date(currentDate);
-	prevDate.setDate(prevDate.getDate() - 1);
-	if (prevDate >= START_DATE) {
-		const y = prevDate.getFullYear();
-		const m = String(prevDate.getMonth() + 1).padStart(2, '0');
-		const d = String(prevDate.getDate()).padStart(2, '0');
-		const prevComicDate = `${y}/${m}/${d}`;
-		
-		fetchComicPageHtml(prevComicDate)
-			.then(({ text }) => text)
-			.then(text => {
-				const imageUrl = extractComicImageUrl(text);
-				if (imageUrl) {
-					const img = new Image();
-					img.decoding = 'async';
-					img.src = imageUrl;
+	if (randomBrowsing) {
+		randomQueue = randomQueue.filter(item => item.context === context && item.date !== currentKey);
+		const excluded = new Set([currentKey, ...randomQueue.map(item => item.date)]);
+		for (let index = randomQueue.length; index < PREFETCH_RANDOM_QUEUE_SIZE; index++) {
+			const candidate = pickRandomDate(excluded);
+			if (!candidate) break;
+			const key = dateKey(candidate);
+			excluded.add(key);
+			tasks.push({ key, random: true });
+		}
+	} else {
+		const favorites = $('showfavs').checked ? [...getFavs()].filter(key => dateFromKey(key)).sort() : null;
+		const previous = favorites?.filter(key => key < currentKey).reverse();
+		const next = favorites?.filter(key => key > currentKey);
+		for (let offset = 1; offset <= PREFETCH_ADJACENT_DAYS; offset++) {
+			for (const direction of [-1, 1]) {
+				const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + direction * offset);
+				const key = favorites ? (direction < 0 ? previous[offset - 1] : next[offset - 1]) : dateKey(date);
+				if (key && key >= dateKey(START_DATE) && key <= dateKey(new Date())) {
+					tasks.push({ key, next: !favorites && direction === 1 && offset === 1 });
 				}
-			})
-			.catch(error => {
-				console.warn('Previous comic preload failed', prevComicDate, error);
-			});
+			}
+		}
 	}
-	
-	// Preload next comic (if not after today)
-	const nextDate = new Date(currentDate);
-	nextDate.setDate(nextDate.getDate() + 1);
-	if (nextDate <= today) {
-		const y = nextDate.getFullYear();
-		const m = String(nextDate.getMonth() + 1).padStart(2, '0');
-		const d = String(nextDate.getDate()).padStart(2, '0');
-		const nextComicDate = `${y}/${m}/${d}`;
-		
-		fetchComicPageHtml(nextComicDate)
-			.then(({ text }) => text)
-			.then(text => {
-				const imageUrl = extractComicImageUrl(text);
-				if (imageUrl) {
-					const img = new Image();
-					img.decoding = 'async';
-					img.src = imageUrl;
+
+	tasks.forEach((task, index) => {
+		preloadTimers.push(setTimeout(() => {
+			if (!stillCurrent()) return;
+			getComic(task.key).then(comic => {
+				if (!stillCurrent()) return;
+				if (!comic.url) {
+					console.warn('Comic preload returned no image', task.key);
+					return;
 				}
-			})
-			.catch(error => {
-				console.warn('Next comic preload failed', nextComicDate, error);
+				if (task.next && comic.date <= currentKey) markNextUnavailable(currentKey, generation);
+				if (comic.date !== task.key) return;
+				warmComicImage(comic.url);
+				if (task.random) randomQueue.push({ date: task.key, context });
+			}).catch(error => {
+				if (!stillCurrent()) return;
+				if (task.next && error.status === 404) markNextUnavailable(currentKey, generation);
+				console.warn('Comic preload failed', task.key, error);
 			});
-	}
+		}, index * PREFETCH_STAGGER_MS));
+	});
 }
 
 /**
@@ -916,6 +1019,7 @@ function PreviousClick() {
 }
 
 function NextClick() {
+	if (!$('showfavs').checked && unpublishedNext === dateKey(currentselectedDate)) return;
 	const favs = getFavs();
 	if ($('showfavs').checked) {
 		const index = favs.indexOf(formattedComicDate);
@@ -948,28 +1052,37 @@ function LastClick() {
 }
 
 function RandomClick() {
-	const favs = getFavs();
-	if ($('showfavs').checked) {
-		const randomIndex = Math.floor(Math.random() * favs.length);
-		currentselectedDate = new Date(favs[randomIndex]);
-	} else {
-		const start = START_DATE.getTime();
-		const end = Date.now();
-		currentselectedDate = new Date(start + Math.random() * (end - start));
+	const context = prefetchContext();
+	const currentKey = currentselectedDate ? dateKey(currentselectedDate) : '';
+	randomQueue = randomQueue.filter(item => item.context === context && item.date !== currentKey);
+	const candidate = randomQueue.shift();
+	const date = candidate ? dateFromKey(candidate.date) : pickRandomDate(new Set([currentKey]));
+	if (!date) {
+		showNotification('No other comics available in this selection.');
+		return false;
 	}
+	currentselectedDate = date;
 	CompareDates();
-	showComic('morph'); // Blur morph animation
+	showComic('morph', true); // Blur morph animation
+	return true;
 }
 
 function DateChange() {
-	currentselectedDate = new Date($('DatePicker').value);
+	const date = dateFromKey($('DatePicker').value);
+	if (!date) {
+		showNotification('Please select a valid comic date.');
+		return;
+	}
+	currentselectedDate = date;
 	CompareDates();
 	showComic('morph'); // Blur morph animation
 }
 
 // Display comic with animation
 // direction: 'next', 'previous' for filmstrip slide; 'morph' for blur effect; null for no animation
-function showComic(direction = null) {
+function showComic(direction = null, randomMode = false) {
+	cancelPreloads();
+	randomBrowsing = randomMode;
 	const sequence = ++comicLoadSequence;
 	const requestedDate = new Date(currentselectedDate);
 	formatDate(currentselectedDate);
@@ -980,12 +1093,10 @@ function showComic(direction = null) {
 	
 	localStorage.setItem('lastcomic', currentselectedDate);
 	
-	fetchComicPageHtml(formattedComicDate)
-		.then(({ text }) => text)
-		.then(text => {
+	getComic(requestedYmd)
+		.then(comic => {
 			if (sequence !== comicLoadSequence) return null;
-			// Extract comic image URL using the reusable function
-			const imageUrl = extractComicImageUrl(text);
+			const imageUrl = comic.url;
 			
 			if (!imageUrl) {
 				// GoComics returned a page but no image — try ArcaMax fallback
@@ -1000,6 +1111,18 @@ function showComic(direction = null) {
 				});
 			}
 			
+			if (comic.date !== requestedYmd) {
+				const actualDate = dateFromKey(comic.date);
+				if (!actualDate || actualDate < START_DATE || comic.date > dateKey(new Date()) || $('showfavs').checked) {
+					throw new Error('GoComics returned a different comic date');
+				}
+				currentselectedDate = actualDate;
+				formatDate(actualDate);
+				formattedComicDate = comic.date;
+				formattedDate = comic.date.replaceAll('/', '-');
+				$('DatePicker').value = formattedDate;
+				localStorage.setItem('lastcomic', actualDate);
+			}
 			// GoComics worked — hide any previous fallback notice
 			hideArcamaxFallbackNotice();
 			return imageUrl;
@@ -1195,6 +1318,7 @@ function CompareDates() {
 	
 	const isAtEnd = currentselectedDate.getTime() >= endDate.getTime();
 	$('Next').disabled = isAtEnd;
+	if (!showFavsChecked && unpublishedNext === dateKey(currentselectedDate)) $('Next').disabled = true;
 	$('Last').disabled = isAtEnd;
 	
 	if (isAtEnd) {
@@ -1215,10 +1339,6 @@ function CompareDates() {
 function handleUrlParams() {
 	const params = new URLSearchParams(window.location.search);
 	
-	if (params.get('action') === 'random') {
-		RandomClick();
-	}
-	
 	if (params.get('view') === 'favorites') {
 		const favs = getFavs();
 		if (favs.length > 0) {
@@ -1226,6 +1346,7 @@ function handleUrlParams() {
 			localStorage.setItem('showfavs', 'true');
 		}
 	}
+	return params.get('action') === 'random';
 }
 
 // Initialize App
@@ -1254,10 +1375,10 @@ function initApp() {
 	}
 	
 	// Handle URL parameters
-	handleUrlParams();
+	const randomAction = handleUrlParams();
 	
 	CompareDates();
-	showComic();
+	if (!randomAction || !RandomClick()) showComic();
 	updateExportButtonState();
 }
 
